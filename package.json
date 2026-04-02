@@ -1,0 +1,34 @@
+{
+  "name": "hybrid-minimal",
+  "author": "Vespucio",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Hybrid Minimal",
+    "uuid": "160b13ab-3897-4861-9441-ef6cd89b748e",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "WeatherTemp",
+      "WeatherIcon",
+      "WeatherUnits",
+      "HourFormat",
+      "VibrateOnDisconnect"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}
