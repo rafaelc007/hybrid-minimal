@@ -110,7 +110,7 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
       int16_t band = 10;
       GRect arc_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
-      graphics_context_set_fill_color(ctx, GColorDarkGray);
+      graphics_context_set_fill_color(ctx, GColorJazzberryJam);
       graphics_fill_radial(ctx, arc_rect, GOvalScaleModeFitCircle,
                            band, DEG_TO_TRIGANGLE(0), progress_angle);
     }
@@ -122,7 +122,7 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
     int16_t band = 8;
     GRect prog_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
-    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorJazzberryJam, GColorWhite));
     rect_draw_progress(ctx, prog_rect, band, minutes, 60);
     }
   }
@@ -146,8 +146,9 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
       GPoint p_outer = gpoint_from_polar(outer_rect, GOvalScaleModeFitCircle, angle);
       GPoint p_inner = gpoint_from_polar(inner_rect, GOvalScaleModeFitCircle, angle);
 
-      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
       graphics_context_set_stroke_width(ctx, is_hour ? 3 : 1);
+      graphics_context_set_stroke_color(ctx, GColorWhite);
       graphics_draw_line(ctx, p_outer, p_inner);
     }
   }
@@ -165,15 +166,17 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
       GPoint p_outer = rect_perimeter_point(outer_rect, i, 60);
       GPoint p_inner = rect_perimeter_point(inner_rect, i, 60);
 
-      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
       graphics_context_set_stroke_width(ctx, is_hour ? 3 : 1);
+      graphics_context_set_stroke_color(ctx, GColorWhite);
       graphics_draw_line(ctx, p_outer, p_inner);
     }
   }
 #endif
 
-  // -- Hour numbers (1–12) placed just inside the tick marks --
-  graphics_context_set_text_color(ctx, GColorWhite);
+  // -- Hour numbers (1–12): current hour white, others gray --
+  int current_hour12 = current_time->tm_hour % 12;
+  if (current_hour12 == 0) current_hour12 = 12;
 
 #ifdef PBL_ROUND
   {
@@ -184,6 +187,9 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
     for (int h = 1; h <= 12; h++) {
       int32_t angle = TRIG_MAX_ANGLE * h / 12;
       GPoint pos = gpoint_from_polar(number_rect, GOvalScaleModeFitCircle, angle);
+
+      bool is_current = (h == current_hour12);
+      graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
       GRect text_box = GRect(pos.x - 10, pos.y - 9, 20, 18);
@@ -203,6 +209,14 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
       int tick = h * 5;
       if (tick >= 60) tick -= 60;  // hour 12 → tick 0
       GPoint pos = rect_perimeter_point(number_rect, tick, 60);
+
+      bool is_current = (h == current_hour12);
+#ifdef PBL_COLOR
+      graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
+#else
+      (void)is_current;
+      graphics_context_set_text_color(ctx, GColorWhite);
+#endif
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
       GRect text_box = GRect(pos.x - 12, pos.y - 10, 24, 20);
