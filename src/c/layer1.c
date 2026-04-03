@@ -122,7 +122,7 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
     int16_t band = 8;
     GRect prog_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
-    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorJazzberryJam, GColorWhite));
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorJazzberryJam, GColorLightGray));
     rect_draw_progress(ctx, prog_rect, band, minutes, 60);
     }
   }
@@ -227,7 +227,4 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
     }
   }
 #endif
-
-  // -- Red debug border --
-  utils_draw_debug_border(ctx, bounds);
 }

@@ -21,6 +21,10 @@ static uint8_t s_battery_pct = 100;
 static uint32_t s_steps = 0;
 static uint32_t s_step_goal = 10000;
 
+// Weather state
+static int s_weather_temp = -999;  // -999 = no data
+static char s_weather_cond[16] = "";
+
 // ============================================================================
 // Layer update proc wrappers (bridge to per-layer modules)
 // ============================================================================
@@ -33,7 +37,7 @@ static void prv_layer2_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer3_update(Layer *layer, GContext *ctx) {
-  layer3_update(layer, ctx);
+  layer3_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond);
 }
 
 // ============================================================================
@@ -76,14 +80,14 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_layer1, prv_layer1_update);
   layer_add_child(window_layer, s_layer1);
 
-  // Layer 2: 4/6 of screen, centered
-  GRect layer2_rect = utils_get_centered_rect(bounds, 4, 6);
+  // Layer 2: 19/30 of screen, centered
+  GRect layer2_rect = utils_get_centered_rect(bounds, 19, 30);
   s_layer2 = layer_create(layer2_rect);
   layer_set_update_proc(s_layer2, prv_layer2_update);
   layer_add_child(window_layer, s_layer2);
 
-  // Layer 3: 2/6 of screen, centered
-  GRect layer3_rect = utils_get_centered_rect(bounds, 2, 6);
+  // Layer 3: 11/30 of screen, centered
+  GRect layer3_rect = utils_get_centered_rect(bounds, 11, 30);
   s_layer3 = layer_create(layer3_rect);
   layer_set_update_proc(s_layer3, prv_layer3_update);
   layer_add_child(window_layer, s_layer3);

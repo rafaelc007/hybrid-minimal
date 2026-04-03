@@ -99,9 +99,6 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
                    uint8_t battery_pct) {
   GRect bounds = layer_get_bounds(layer);
 
-  // Red debug border for layer 2
-  utils_draw_debug_border(ctx, bounds);
-
   // Position bars at the midpoint between layer 1 edge and layer 3 edge.
   // In layer 2 local coords: layer 2 outer = 0, layer 3 inner = bounds/4 inset.
   // Midpoint = bounds/8 inset from layer 2 edge.
