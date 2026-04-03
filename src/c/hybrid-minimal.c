@@ -16,6 +16,11 @@ static Layer *s_layer3;  // inner — 2/6
 // Current time cache
 static struct tm s_current_time;
 
+// Battery & steps state
+static uint8_t s_battery_pct = 100;
+static uint32_t s_steps = 0;
+static uint32_t s_step_goal = 10000;
+
 // ============================================================================
 // Layer update proc wrappers (bridge to per-layer modules)
 // ============================================================================
@@ -24,7 +29,7 @@ static void prv_layer1_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer2_update(Layer *layer, GContext *ctx) {
-  layer2_update(layer, ctx);
+  layer2_update(layer, ctx, s_steps, s_step_goal, s_battery_pct);
 }
 
 static void prv_layer3_update(Layer *layer, GContext *ctx) {
@@ -39,6 +44,24 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   layer_mark_dirty(s_layer1);
   layer_mark_dirty(s_layer2);
   layer_mark_dirty(s_layer3);
+}
+
+// ============================================================================
+// Battery service handler
+// ============================================================================
+static void prv_battery_handler(BatteryChargeState charge) {
+  s_battery_pct = charge.charge_percent;
+  layer_mark_dirty(s_layer2);
+}
+
+// ============================================================================
+// Health service handler
+// ============================================================================
+static void prv_health_handler(HealthEventType event, void *context) {
+  if (event == HealthEventMovementUpdate || event == HealthEventSignificantUpdate) {
+    s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
+    layer_mark_dirty(s_layer2);
+  }
 }
 
 // ============================================================================
@@ -68,6 +91,13 @@ static void prv_window_load(Window *window) {
   // Seed initial time
   time_t now = time(NULL);
   s_current_time = *localtime(&now);
+
+  // Seed initial battery state
+  BatteryChargeState batt = battery_state_service_peek();
+  s_battery_pct = batt.charge_percent;
+
+  // Seed initial step count
+  s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
 }
 
 static void prv_window_unload(Window *window) {
@@ -89,10 +119,18 @@ static void prv_init(void) {
 
   // Subscribe to minute-level tick updates
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
+
+  // Subscribe to battery updates
+  battery_state_service_subscribe(prv_battery_handler);
+
+  // Subscribe to health updates
+  health_service_events_subscribe(prv_health_handler, NULL);
 }
 
 static void prv_deinit(void) {
   tick_timer_service_unsubscribe();
+  battery_state_service_unsubscribe();
+  health_service_events_unsubscribe();
   window_destroy(s_window);
 }
 
