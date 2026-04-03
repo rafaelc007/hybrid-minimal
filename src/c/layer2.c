@@ -2,21 +2,16 @@
 #include "utils.h"
 
 // ============================================================================
-// Quarter-arc progress bar drawing
+// Quarter-arc progress bar (round screens — battery only)
 // ============================================================================
-
 #ifdef PBL_ROUND
-// Draw a quarter-arc progress on round screens.
-// start_angle/end_angle in Pebble trig units. Fills proportional to value/max.
 static void draw_quarter_arc(GContext *ctx, GRect rect, int16_t thickness,
                               GColor fill_color, GColor track_color,
                               int32_t start_angle, int32_t end_angle,
                               int value, int max) {
-  // Track
   graphics_context_set_fill_color(ctx, track_color);
   graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle,
                        thickness, start_angle, end_angle);
-  // Fill
   if (value > 0 && max > 0) {
     int clamped = value > max ? max : value;
     int32_t fill_end = start_angle +
@@ -26,136 +21,76 @@ static void draw_quarter_arc(GContext *ctx, GRect rect, int16_t thickness,
                          thickness, start_angle, fill_end);
   }
 }
-#else
-// Draw a quarter-perimeter progress bar on rectangular screens.
-// Follows the rect edge from one midpoint around one corner to the next midpoint.
-// quadrant: 0 = top-center→right-center, 1 = right→bottom, 2 = bottom→left, 3 = left→top
-static void draw_quarter_rect(GContext *ctx, GRect rect, int16_t band,
-                               GColor fill_color, GColor track_color,
-                               int quadrant, int value, int max) {
-  int x = rect.origin.x;
-  int y = rect.origin.y;
-  int w = rect.size.w;
-  int h = rect.size.h;
-  int hw = w / 2;
-  int hh = h / 2;
-
-  // Quarter-perimeter has 2 segments (half-edge + half-edge around one corner)
-  int seg1, seg2;
-  switch (quadrant) {
-    case 0: seg1 = hw; seg2 = hh; break; // top-center→TR corner→right-center
-    case 1: seg1 = hh; seg2 = hw; break; // right-center→BR corner→bottom-center
-    case 2: seg1 = hw; seg2 = hh; break; // bottom-center→BL corner→left-center
-    case 3: seg1 = hh; seg2 = hw; break; // left-center→TL corner→top-center
-    default: seg1 = hw; seg2 = hh; break;
-  }
-  int q_perim = seg1 + seg2;
-
-  // Helper: draw a segment pair with a given fill distance
-  // Corner radius — full squircle rounding
-  uint16_t cr = band;
-  GCornerMask cm = GCornersAll;
-
-  #define DRAW_SEGS(color, dist) do { \
-    int _r = (dist); \
-    int _f1 = (_r > seg1) ? seg1 : _r; \
-    int _f2 = (_r > seg1) ? (_r - seg1) : 0; \
-    if (_f2 > seg2) _f2 = seg2; \
-    graphics_context_set_fill_color(ctx, (color)); \
-    switch (quadrant) { \
-      case 0: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw, y, _f1, band), cr, cm); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y, band, _f2), cr, cm); \
-        break; \
-      case 1: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y+hh, band, _f1), cr, cm); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-_f2, y+h-band, _f2, band), cr, cm); \
-        break; \
-      case 2: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw-_f1, y+h-band, _f1, band), cr, cm); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y+h-_f2, band, _f2), cr, cm); \
-        break; \
-      case 3: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x, y+hh-_f1, band, _f1), cr, cm); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y, _f2, band), cr, cm); \
-        break; \
-    } \
-  } while(0)
-
-  // Track (full quarter)
-  DRAW_SEGS(track_color, q_perim);
-
-  // Fill
-  if (value > 0 && max > 0) {
-    int clamped = value > max ? max : value;
-    int fill_dist = clamped * q_perim / max;
-    DRAW_SEGS(fill_color, fill_dist);
-  }
-
-  #undef DRAW_SEGS
-}
 #endif
 
 // ============================================================================
 // Layer 2 update
 // ============================================================================
 void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_goal,
-                   uint8_t battery_pct) {
+                   uint8_t battery_pct, GBitmap *icon_steps) {
   GRect bounds = layer_get_bounds(layer);
+  int16_t hw = bounds.size.w / 2;
 
-  // Position bars closer to the layer 2 edge.
-  int16_t mid_inset_w = bounds.size.w / 14;
-  int16_t mid_inset_h = bounds.size.h / 14;
-  GRect bar_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w, mid_inset_h, mid_inset_w));
-
-  GColor steps_fill  = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+  GColor steps_color = GColorWhite;
   GColor batt_fill   = PBL_IF_COLOR_ELSE(GColorCyan, GColorWhite);
   GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
   int16_t bar_thickness = PBL_IF_ROUND_ELSE(8, 6);
 
-#ifdef PBL_ROUND
-  // Steps: top-center (0°) → right-center (90°)
-  draw_quarter_arc(ctx, bar_rect, bar_thickness,
-                   steps_fill, track_color,
-                   DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(90),
-                   steps, step_goal);
-  // Battery: bottom-center (180°) → left-center (270°)
-  draw_quarter_arc(ctx, bar_rect, bar_thickness,
-                   batt_fill, track_color,
-                   DEG_TO_TRIGANGLE(180), DEG_TO_TRIGANGLE(270),
-                   battery_pct, 100);
-#else
-  // Steps: quadrant 0 = top-center → right-center
-  draw_quarter_rect(ctx, bar_rect, bar_thickness,
-                    steps_fill, track_color,
-                    0, steps, step_goal);
-  // Battery: quadrant 2 = bottom-center → left-center
-  draw_quarter_rect(ctx, bar_rect, bar_thickness,
-                    batt_fill, track_color,
-                    2, battery_pct, 100);
-#endif
+  // -- Steps: count centered + step icon to the right --
+  // Layout: [count 40px] [4px gap] [icon 10px], group centered
+  int16_t text_w = 40;
+  int16_t icon_w = 10;
+  int16_t gap    = 4;
+  int16_t group_w = text_w + gap + icon_w;
+  int16_t group_x = hw - group_w / 2;
+  int16_t center_y = bar_thickness + 10;  // near the top of layer 2
 
-  // -- Labels centered in each quadrant area --
-  int16_t hw = bounds.size.w / 2;
-  int16_t hh = bounds.size.h / 2;
-
-  // Steps label (upper-right quadrant)
   char steps_str[8];
   snprintf(steps_str, sizeof(steps_str), "%lu", (unsigned long)steps);
-  GRect steps_label = GRect(hw - hw / 2, hh / 4 - 10, hw / 2, bar_thickness);
-  graphics_context_set_text_color(ctx, GColorWhite);
+
+  GRect text_box = GRect(group_x, center_y - 7, text_w, 14);
+  graphics_context_set_text_color(ctx, steps_color);
   graphics_draw_text(ctx, steps_str,
                      fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                     steps_label, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentCenter, NULL);
+                     text_box, GTextOverflowModeTrailingEllipsis,
+                     GTextAlignmentRight, NULL);
 
-  // Battery label (lower-left quadrant)
-  char batt_str[6];
-  snprintf(batt_str, sizeof(batt_str), "%d%%", battery_pct);
-  GRect batt_label = GRect(hw, hh + hh / 2 + 10, hw / 2 , bar_thickness);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, batt_str,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                     batt_label, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentCenter, NULL);
+  GPoint icon_origin = GPoint(group_x + text_w + gap, center_y - 5);
+  if (icon_steps) {
+    GSize icon_size = gbitmap_get_bounds(icon_steps).size;
+    GRect icon_rect = GRect(icon_origin.x, icon_origin.y, icon_size.w, icon_size.h);
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, icon_steps, icon_rect);
+  }
+
+  // -- Battery widget --
+  int16_t mid_inset_w = bounds.size.w / 14;
+  int16_t mid_inset_h = bounds.size.h / 14;
+
+#ifdef PBL_ROUND
+  {
+    GRect bar_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w,
+                                                      mid_inset_h, mid_inset_w));
+    draw_quarter_arc(ctx, bar_rect, bar_thickness,
+                     batt_fill, track_color,
+                     DEG_TO_TRIGANGLE(135), DEG_TO_TRIGANGLE(225),
+                     battery_pct, 100);
+  }
+#else
+  (void)mid_inset_w; (void)mid_inset_h;
+  {
+    int16_t bar_w = bounds.size.w * 4 / 6;
+    int16_t bar_x = (bounds.size.w - bar_w) / 2;
+    int16_t bar_y = bounds.size.h - bar_thickness - 5;
+    graphics_context_set_fill_color(ctx, track_color);
+    graphics_fill_rect(ctx, GRect(bar_x, bar_y, bar_w, bar_thickness),
+                       bar_thickness, GCornersAll);
+    if (battery_pct > 0) {
+      int fill_w = bar_w * battery_pct / 100;
+      graphics_context_set_fill_color(ctx, batt_fill);
+      graphics_fill_rect(ctx, GRect(bar_x, bar_y, fill_w, bar_thickness),
+                         bar_thickness, GCornersAll);
+    }
+  }
+#endif
 }

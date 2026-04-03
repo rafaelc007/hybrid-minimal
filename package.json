@@ -28,7 +28,13 @@
       "VibrateOnDisconnect"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "ICON_STEPS",
+          "file": "images/icon_steps.png"
+        }
+      ]
     }
   }
 }

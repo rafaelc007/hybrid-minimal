@@ -25,6 +25,9 @@ static uint32_t s_step_goal = 10000;
 static int s_weather_temp = -999;  // -999 = no data
 static char s_weather_cond[16] = "";
 
+// Cached bitmaps
+static GBitmap *s_icon_steps = NULL;
+
 // ============================================================================
 // Layer update proc wrappers (bridge to per-layer modules)
 // ============================================================================
@@ -33,7 +36,7 @@ static void prv_layer1_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer2_update(Layer *layer, GContext *ctx) {
-  layer2_update(layer, ctx, s_steps, s_step_goal, s_battery_pct);
+  layer2_update(layer, ctx, s_steps, s_step_goal, s_battery_pct, s_icon_steps);
 }
 
 static void prv_layer3_update(Layer *layer, GContext *ctx) {
@@ -102,9 +105,14 @@ static void prv_window_load(Window *window) {
 
   // Seed initial step count
   s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
+
+  // Load cached bitmaps
+  s_icon_steps = gbitmap_create_with_resource(RESOURCE_ID_ICON_STEPS);
 }
 
 static void prv_window_unload(Window *window) {
+  gbitmap_destroy(s_icon_steps);
+  s_icon_steps = NULL;
   layer_destroy(s_layer3);
   layer_destroy(s_layer2);
   layer_destroy(s_layer1);
