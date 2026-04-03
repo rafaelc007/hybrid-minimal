@@ -49,7 +49,7 @@ void layer3_update(Layer *layer, GContext *ctx, struct tm *current_time,
   strftime(time_str, sizeof(time_str),
            clock_is_24h_style() ? "%H:%M" : "%I:%M", current_time);
 
-  GFont time_font = (bounds.size.w >= 60)
+  GFont time_font = (bounds.size.w >= 70)
     ? fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS)
     : fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 

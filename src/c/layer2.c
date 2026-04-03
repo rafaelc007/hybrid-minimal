@@ -52,6 +52,10 @@ static void draw_quarter_rect(GContext *ctx, GRect rect, int16_t band,
   int q_perim = seg1 + seg2;
 
   // Helper: draw a segment pair with a given fill distance
+  // Corner radius — full squircle rounding
+  uint16_t cr = band;
+  GCornerMask cm = GCornersAll;
+
   #define DRAW_SEGS(color, dist) do { \
     int _r = (dist); \
     int _f1 = (_r > seg1) ? seg1 : _r; \
@@ -60,20 +64,20 @@ static void draw_quarter_rect(GContext *ctx, GRect rect, int16_t band,
     graphics_context_set_fill_color(ctx, (color)); \
     switch (quadrant) { \
       case 0: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw, y, _f1, band), 0, GCornerNone); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y, band, _f2), 0, GCornerNone); \
+        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw, y, _f1, band), cr, cm); \
+        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y, band, _f2), cr, cm); \
         break; \
       case 1: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y+hh, band, _f1), 0, GCornerNone); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-_f2, y+h-band, _f2, band), 0, GCornerNone); \
+        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+w-band, y+hh, band, _f1), cr, cm); \
+        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x+w-_f2, y+h-band, _f2, band), cr, cm); \
         break; \
       case 2: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw-_f1, y+h-band, _f1, band), 0, GCornerNone); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y+h-_f2, band, _f2), 0, GCornerNone); \
+        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x+hw-_f1, y+h-band, _f1, band), cr, cm); \
+        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y+h-_f2, band, _f2), cr, cm); \
         break; \
       case 3: \
-        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x, y+hh-_f1, band, _f1), 0, GCornerNone); \
-        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y, _f2, band), 0, GCornerNone); \
+        if (_f1 > 0) graphics_fill_rect(ctx, GRect(x, y+hh-_f1, band, _f1), cr, cm); \
+        if (_f2 > 0) graphics_fill_rect(ctx, GRect(x, y, _f2, band), cr, cm); \
         break; \
     } \
   } while(0)
@@ -99,37 +103,34 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
                    uint8_t battery_pct) {
   GRect bounds = layer_get_bounds(layer);
 
-  // Position bars at the midpoint between layer 1 edge and layer 3 edge.
-  // In layer 2 local coords: layer 2 outer = 0, layer 3 inner = bounds/4 inset.
-  // Midpoint = bounds/8 inset from layer 2 edge.
-  int16_t mid_inset_w = bounds.size.w / 8;
-  int16_t mid_inset_h = bounds.size.h / 8;
+  // Position bars closer to the layer 2 edge.
+  int16_t mid_inset_w = bounds.size.w / 14;
+  int16_t mid_inset_h = bounds.size.h / 14;
   GRect bar_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w, mid_inset_h, mid_inset_w));
 
   GColor steps_fill  = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
   GColor batt_fill   = PBL_IF_COLOR_ELSE(GColorCyan, GColorWhite);
   GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
+  int16_t bar_thickness = PBL_IF_ROUND_ELSE(8, 6);
 
 #ifdef PBL_ROUND
-  int16_t thickness = 8;
   // Steps: top-center (0°) → right-center (90°)
-  draw_quarter_arc(ctx, bar_rect, thickness,
+  draw_quarter_arc(ctx, bar_rect, bar_thickness,
                    steps_fill, track_color,
                    DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(90),
                    steps, step_goal);
   // Battery: bottom-center (180°) → left-center (270°)
-  draw_quarter_arc(ctx, bar_rect, thickness,
+  draw_quarter_arc(ctx, bar_rect, bar_thickness,
                    batt_fill, track_color,
                    DEG_TO_TRIGANGLE(180), DEG_TO_TRIGANGLE(270),
                    battery_pct, 100);
 #else
-  int16_t band = 6;
   // Steps: quadrant 0 = top-center → right-center
-  draw_quarter_rect(ctx, bar_rect, band,
+  draw_quarter_rect(ctx, bar_rect, bar_thickness,
                     steps_fill, track_color,
                     0, steps, step_goal);
   // Battery: quadrant 2 = bottom-center → left-center
-  draw_quarter_rect(ctx, bar_rect, band,
+  draw_quarter_rect(ctx, bar_rect, bar_thickness,
                     batt_fill, track_color,
                     2, battery_pct, 100);
 #endif
@@ -141,7 +142,7 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
   // Steps label (upper-right quadrant)
   char steps_str[8];
   snprintf(steps_str, sizeof(steps_str), "%lu", (unsigned long)steps);
-  GRect steps_label = GRect(hw - hw / 2, hh / 4 -5, hw / 2, 16);
+  GRect steps_label = GRect(hw - hw / 2, hh / 4 - 10, hw / 2, bar_thickness);
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, steps_str,
                      fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -151,7 +152,7 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
   // Battery label (lower-left quadrant)
   char batt_str[6];
   snprintf(batt_str, sizeof(batt_str), "%d%%", battery_pct);
-  GRect batt_label = GRect(hw, hh + hh / 2 + 5, hw / 2 , 16);
+  GRect batt_label = GRect(hw, hh + hh / 2 + 10, hw / 2 , bar_thickness);
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, batt_str,
                      fonts_get_system_font(FONT_KEY_GOTHIC_14),

@@ -69,19 +69,19 @@ static void rect_draw_progress(GContext *ctx, GRect outer, int16_t band,
 
     switch (seg) {
       case 0: // Top edge, center → right
-        graphics_fill_rect(ctx, GRect(x + hw, y, flen, band), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(x + hw, y, flen, band), band, GCornerBottomRight);
         break;
       case 1: // Right edge, top → bottom
-        graphics_fill_rect(ctx, GRect(x + w - band, y, band, flen), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(x + w - band, y, band, flen), band, GCornerBottomLeft);
         break;
       case 2: // Bottom edge, right → left
-        graphics_fill_rect(ctx, GRect(x + w - flen, y + h - band, flen, band), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(x + w - flen, y + h - band, flen, band), band, GCornerTopLeft);
         break;
       case 3: // Left edge, bottom → top
-        graphics_fill_rect(ctx, GRect(x, y + h - flen, band, flen), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(x, y + h - flen, band, flen), band, GCornerTopRight);
         break;
       case 4: // Top edge, left → center
-        graphics_fill_rect(ctx, GRect(x, y, flen, band), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(x, y, flen, band), band, GCornerBottomRight);
         break;
     }
   }
