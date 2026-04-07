@@ -37,37 +37,86 @@
         {
           "type": "raw",
           "name": "WEATHER_GENERIC",
-          "file": "images/Pebble_50x50_Generic_weather.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Generic_weather_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_GENERIC",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Generic_weather_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_CLEAR",
-          "file": "images/Pebble_50x50_Sunny_day.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Sunny_day_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_CLEAR",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Sunny_day_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_PARTLY_CLOUDY",
-          "file": "images/Pebble_50x50_Partly_cloudy.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Partly_cloudy_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_PARTLY_CLOUDY",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Partly_cloudy_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_LIGHT_RAIN",
-          "file": "images/Pebble_50x50_Light_rain.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Light_rain_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_LIGHT_RAIN",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Light_rain_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_HEAVY_RAIN",
-          "file": "images/Pebble_50x50_Heavy_rain.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Heavy_rain_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_HEAVY_RAIN",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Heavy_rain_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_LIGHT_SNOW",
-          "file": "images/Pebble_50x50_Light_snow.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Light_snow_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_LIGHT_SNOW",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Light_snow_small.pdc"
         },
         {
           "type": "raw",
           "name": "WEATHER_HEAVY_SNOW",
-          "file": "images/Pebble_50x50_Heavy_snow.pdc"
+          "targetPlatforms": ["emery"],
+          "file": "images/Pebble_50x50_Heavy_snow_half.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_HEAVY_SNOW",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/Pebble_50x50_Heavy_snow_small.pdc"
         }
       ]
     }

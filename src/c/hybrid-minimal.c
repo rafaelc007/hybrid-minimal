@@ -75,22 +75,6 @@ static bool prv_invert_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
   return true;
 }
 
-// Scale all draw command points + radius + stroke width to 50% (called once at load)
-static bool prv_scale_half_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
-  uint16_t n = gdraw_command_get_num_points(cmd);
-  for (uint16_t i = 0; i < n; i++) {
-    GPoint p = gdraw_command_get_point(cmd, i);
-    p.x /= 2;
-    p.y /= 2;
-    gdraw_command_set_point(cmd, i, p);
-  }
-  uint16_t r = gdraw_command_get_radius(cmd);
-  if (r > 0) gdraw_command_set_radius(cmd, r / 2);
-  uint8_t sw = gdraw_command_get_stroke_width(cmd);
-  gdraw_command_set_stroke_width(cmd, sw > 1 ? sw / 2 : 1);
-  return true;
-}
-
 // ============================================================================
 // Layer update proc wrappers (bridge to per-layer modules)
 // ============================================================================
@@ -179,7 +163,9 @@ static void prv_window_load(Window *window) {
       prv_recolor_black_to, &green);
   }
 
-  // Load weather icons (scaled to 50%)
+  // Load pre-scaled weather icons (already sized for this platform via targetPlatforms
+  // in package.json: emery gets _half.pdc at 25x25, small screens get _small.pdc at 16x16).
+  // Only invert colors (icons are black-on-transparent; watchface background is dark).
   static const uint32_t s_weather_res_ids[NUM_WEATHER_ICONS] = {
     RESOURCE_ID_WEATHER_GENERIC,
     RESOURCE_ID_WEATHER_CLEAR,
@@ -193,11 +179,7 @@ static void prv_window_load(Window *window) {
     s_weather_icons[i] = gdraw_command_image_create_with_resource(s_weather_res_ids[i]);
     if (s_weather_icons[i]) {
       GDrawCommandList *list = gdraw_command_image_get_command_list(s_weather_icons[i]);
-      gdraw_command_list_iterate(list, prv_scale_half_cmd, NULL);
       gdraw_command_list_iterate(list, prv_invert_cmd, NULL);
-      GSize orig = gdraw_command_image_get_bounds_size(s_weather_icons[i]);
-      gdraw_command_image_set_bounds_size(s_weather_icons[i],
-                                          GSize(orig.w / 2, orig.h / 2));
     }
   }
 }
