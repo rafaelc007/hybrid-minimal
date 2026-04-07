@@ -28,6 +28,19 @@ static char s_weather_cond[16] = "";
 // Cached draw command images
 static GDrawCommandImage *s_icon_steps = NULL;
 
+// Weather icons (order must match WEATHER_IDX_* enum below)
+#define NUM_WEATHER_ICONS 7
+typedef enum {
+  WEATHER_IDX_GENERIC = 0,
+  WEATHER_IDX_CLEAR,
+  WEATHER_IDX_PARTLY_CLOUDY,
+  WEATHER_IDX_LIGHT_RAIN,
+  WEATHER_IDX_HEAVY_RAIN,
+  WEATHER_IDX_LIGHT_SNOW,
+  WEATHER_IDX_HEAVY_SNOW,
+} WeatherIconIndex;
+static GDrawCommandImage *s_weather_icons[NUM_WEATHER_ICONS];
+
 // Recolor all black strokes/fills in a PDC to a target color (called once at load)
 static bool prv_recolor_black_to(GDrawCommand *cmd, uint32_t idx, void *context) {
   GColor target = *(GColor *)context;
@@ -35,6 +48,46 @@ static bool prv_recolor_black_to(GDrawCommand *cmd, uint32_t idx, void *context)
     gdraw_command_set_fill_color(cmd, target);
   if (gcolor_equal(gdraw_command_get_stroke_color(cmd), GColorBlack))
     gdraw_command_set_stroke_color(cmd, target);
+  return true;
+}
+
+// Returns the weather icon matching s_weather_cond (expects lowercase tokens from JS)
+static GDrawCommandImage *prv_get_weather_icon(void) {
+  const char *c = s_weather_cond;
+  if (s_weather_temp == -999 || !c || c[0] == '\0') return NULL;
+  if (strstr(c, "sun")     || strstr(c, "clear"))   return s_weather_icons[WEATHER_IDX_CLEAR];
+  if (strstr(c, "cloud")   || strstr(c, "overcast")) return s_weather_icons[WEATHER_IDX_PARTLY_CLOUDY];
+  if (strstr(c, "drizzle"))                           return s_weather_icons[WEATHER_IDX_LIGHT_RAIN];
+  if (strstr(c, "rain")    || strstr(c, "thunder"))  return s_weather_icons[WEATHER_IDX_HEAVY_RAIN];
+  if (strstr(c, "sleet"))                             return s_weather_icons[WEATHER_IDX_LIGHT_SNOW];
+  if (strstr(c, "snow"))                              return s_weather_icons[WEATHER_IDX_HEAVY_SNOW];
+  return s_weather_icons[WEATHER_IDX_GENERIC];
+}
+
+// Invert black<->white on a draw command (called once at load for weather icons)
+static bool prv_invert_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
+  GColor fc = gdraw_command_get_fill_color(cmd);
+  if (gcolor_equal(fc, GColorBlack)) gdraw_command_set_fill_color(cmd, GColorWhite);
+  else if (gcolor_equal(fc, GColorWhite)) gdraw_command_set_fill_color(cmd, GColorBlack);
+  GColor sc = gdraw_command_get_stroke_color(cmd);
+  if (gcolor_equal(sc, GColorBlack)) gdraw_command_set_stroke_color(cmd, GColorWhite);
+  else if (gcolor_equal(sc, GColorWhite)) gdraw_command_set_stroke_color(cmd, GColorBlack);
+  return true;
+}
+
+// Scale all draw command points + radius + stroke width to 50% (called once at load)
+static bool prv_scale_half_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
+  uint16_t n = gdraw_command_get_num_points(cmd);
+  for (uint16_t i = 0; i < n; i++) {
+    GPoint p = gdraw_command_get_point(cmd, i);
+    p.x /= 2;
+    p.y /= 2;
+    gdraw_command_set_point(cmd, i, p);
+  }
+  uint16_t r = gdraw_command_get_radius(cmd);
+  if (r > 0) gdraw_command_set_radius(cmd, r / 2);
+  uint8_t sw = gdraw_command_get_stroke_width(cmd);
+  gdraw_command_set_stroke_width(cmd, sw > 1 ? sw / 2 : 1);
   return true;
 }
 
@@ -50,7 +103,8 @@ static void prv_layer2_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer3_update(Layer *layer, GContext *ctx) {
-  layer3_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond);
+  layer3_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond,
+                prv_get_weather_icon());
 }
 
 // ============================================================================
@@ -124,14 +178,56 @@ static void prv_window_load(Window *window) {
       gdraw_command_image_get_command_list(s_icon_steps),
       prv_recolor_black_to, &green);
   }
+
+  // Load weather icons (scaled to 50%)
+  static const uint32_t s_weather_res_ids[NUM_WEATHER_ICONS] = {
+    RESOURCE_ID_WEATHER_GENERIC,
+    RESOURCE_ID_WEATHER_CLEAR,
+    RESOURCE_ID_WEATHER_PARTLY_CLOUDY,
+    RESOURCE_ID_WEATHER_LIGHT_RAIN,
+    RESOURCE_ID_WEATHER_HEAVY_RAIN,
+    RESOURCE_ID_WEATHER_LIGHT_SNOW,
+    RESOURCE_ID_WEATHER_HEAVY_SNOW,
+  };
+  for (int i = 0; i < NUM_WEATHER_ICONS; i++) {
+    s_weather_icons[i] = gdraw_command_image_create_with_resource(s_weather_res_ids[i]);
+    if (s_weather_icons[i]) {
+      GDrawCommandList *list = gdraw_command_image_get_command_list(s_weather_icons[i]);
+      gdraw_command_list_iterate(list, prv_scale_half_cmd, NULL);
+      gdraw_command_list_iterate(list, prv_invert_cmd, NULL);
+      GSize orig = gdraw_command_image_get_bounds_size(s_weather_icons[i]);
+      gdraw_command_image_set_bounds_size(s_weather_icons[i],
+                                          GSize(orig.w / 2, orig.h / 2));
+    }
+  }
 }
 
 static void prv_window_unload(Window *window) {
   gdraw_command_image_destroy(s_icon_steps);
   s_icon_steps = NULL;
+  for (int i = 0; i < NUM_WEATHER_ICONS; i++) {
+    gdraw_command_image_destroy(s_weather_icons[i]);
+    s_weather_icons[i] = NULL;
+  }
   layer_destroy(s_layer3);
   layer_destroy(s_layer2);
   layer_destroy(s_layer1);
+}
+
+// ============================================================================
+// AppMessage handler (receives weather data from JS)
+// ============================================================================
+static void prv_inbox_received_handler(DictionaryIterator *received, void *context) {
+  Tuple *temp_t = dict_find(received, MESSAGE_KEY_WeatherTemp);
+  if (temp_t) {
+    s_weather_temp = (int)temp_t->value->int32;
+  }
+  Tuple *icon_t = dict_find(received, MESSAGE_KEY_WeatherIcon);
+  if (icon_t && icon_t->type == TUPLE_CSTRING) {
+    strncpy(s_weather_cond, icon_t->value->cstring, sizeof(s_weather_cond) - 1);
+    s_weather_cond[sizeof(s_weather_cond) - 1] = '\0';
+  }
+  layer_mark_dirty(s_layer3);
 }
 
 // ============================================================================
@@ -144,6 +240,10 @@ static void prv_init(void) {
     .unload = prv_window_unload,
   });
   window_stack_push(s_window, true);
+
+  // Open AppMessage channel for weather data
+  app_message_register_inbox_received(prv_inbox_received_handler);
+  app_message_open(256, 32);
 
   // Subscribe to minute-level tick updates
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
