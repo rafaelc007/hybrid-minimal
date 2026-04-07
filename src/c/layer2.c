@@ -27,7 +27,7 @@ static void draw_quarter_arc(GContext *ctx, GRect rect, int16_t thickness,
 // Layer 2 update
 // ============================================================================
 void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_goal,
-                   uint8_t battery_pct, GBitmap *icon_steps) {
+                   uint8_t battery_pct, GDrawCommandImage *icon_steps) {
   GRect bounds = layer_get_bounds(layer);
   int16_t hw = bounds.size.w / 2;
 
@@ -57,10 +57,9 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
 
   GPoint icon_origin = GPoint(group_x + text_w + gap, center_y - 5);
   if (icon_steps) {
-    GSize icon_size = gbitmap_get_bounds(icon_steps).size;
+    GSize icon_size = gdraw_command_image_get_bounds_size(icon_steps);
     GRect icon_rect = GRect(icon_origin.x, icon_origin.y, icon_size.w, icon_size.h);
-    graphics_context_set_compositing_mode(ctx, GCompOpSet);
-    graphics_draw_bitmap_in_rect(ctx, icon_steps, icon_rect);
+    gdraw_command_image_draw(ctx, icon_steps, icon_rect.origin);
   }
 
   // -- Battery widget --

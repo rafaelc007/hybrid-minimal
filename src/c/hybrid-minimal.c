@@ -25,8 +25,18 @@ static uint32_t s_step_goal = 10000;
 static int s_weather_temp = -999;  // -999 = no data
 static char s_weather_cond[16] = "";
 
-// Cached bitmaps
-static GBitmap *s_icon_steps = NULL;
+// Cached draw command images
+static GDrawCommandImage *s_icon_steps = NULL;
+
+// Recolor all black strokes/fills in a PDC to green (called once at load)
+static bool prv_recolor_to_green(GDrawCommand *cmd, uint32_t idx, void *context) {
+  GColor green = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+  if (gcolor_equal(gdraw_command_get_fill_color(cmd), GColorBlack))
+    gdraw_command_set_fill_color(cmd, green);
+  if (gcolor_equal(gdraw_command_get_stroke_color(cmd), GColorBlack))
+    gdraw_command_set_stroke_color(cmd, green);
+  return true;
+}
 
 // ============================================================================
 // Layer update proc wrappers (bridge to per-layer modules)
@@ -106,12 +116,17 @@ static void prv_window_load(Window *window) {
   // Seed initial step count
   s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
 
-  // Load cached bitmaps
-  s_icon_steps = gbitmap_create_with_resource(RESOURCE_ID_ICON_STEPS);
+  // Load cached PDC icon and recolor black → green
+  s_icon_steps = gdraw_command_image_create_with_resource(RESOURCE_ID_ICON_STEPS);
+  if (s_icon_steps) {
+    gdraw_command_list_iterate(
+      gdraw_command_image_get_command_list(s_icon_steps),
+      prv_recolor_to_green, NULL);
+  }
 }
 
 static void prv_window_unload(Window *window) {
-  gbitmap_destroy(s_icon_steps);
+  gdraw_command_image_destroy(s_icon_steps);
   s_icon_steps = NULL;
   layer_destroy(s_layer3);
   layer_destroy(s_layer2);

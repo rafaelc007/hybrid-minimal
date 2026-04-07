@@ -30,9 +30,9 @@
     "resources": {
       "media": [
         {
-          "type": "bitmap",
+          "type": "raw",
           "name": "ICON_STEPS",
-          "file": "images/icon_steps.png"
+          "file": "images/icon_steps.pdc"
         }
       ]
     }
