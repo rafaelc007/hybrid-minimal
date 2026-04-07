@@ -214,6 +214,10 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
 #ifdef PBL_COLOR
       graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 #else
+      if (is_current) {
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        graphics_draw_rect(ctx, GRect(pos.x - 10, pos.y - 8, 24, 20));
+      }
       (void)is_current;
       graphics_context_set_text_color(ctx, GColorWhite);
 #endif
