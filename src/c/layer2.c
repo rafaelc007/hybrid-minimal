@@ -33,7 +33,6 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
 
   GColor steps_color = GColorWhite;
   GColor batt_fill   = PBL_IF_COLOR_ELSE(GColorCyan, GColorWhite);
-  GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
   int16_t bar_thickness = PBL_IF_ROUND_ELSE(8, 6);
 
   // -- Steps: count centered + step icon to the right --
@@ -68,6 +67,7 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
 
 #ifdef PBL_ROUND
   {
+    GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
     GRect bar_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w,
                                                       mid_inset_h, mid_inset_w));
     draw_quarter_arc(ctx, bar_rect, bar_thickness,
@@ -78,17 +78,38 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
 #else
   (void)mid_inset_w; (void)mid_inset_h;
   {
-    int16_t bar_w = bounds.size.w * 4 / 6;
-    int16_t bar_x = (bounds.size.w - bar_w) / 2;
-    int16_t bar_y = bounds.size.h - bar_thickness - 5;
-    graphics_context_set_fill_color(ctx, track_color);
-    graphics_fill_rect(ctx, GRect(bar_x, bar_y, bar_w, bar_thickness),
-                       bar_thickness, GCornersAll);
-    if (battery_pct > 0) {
-      int fill_w = bar_w * battery_pct / 100;
-      graphics_context_set_fill_color(ctx, batt_fill);
-      graphics_fill_rect(ctx, GRect(bar_x, bar_y, fill_w, bar_thickness),
-                         bar_thickness, GCornersAll);
+    // Battery contour: 1px border, 1px gap, fill bar, nub on right
+    int16_t border     = 1;
+    int16_t pad        = 1;
+    int16_t fill_h     = 4;
+    int16_t body_h     = fill_h + 2 * (border + pad);  // 8px total
+    int16_t nub_w      = 3;
+    int16_t nub_h      = fill_h;
+    int16_t body_w     = bounds.size.w * 4 / 6;
+    int16_t total_w    = body_w + nub_w;
+    int16_t body_x     = (bounds.size.w - total_w) / 2;
+    int16_t body_y     = bounds.size.h - body_h - 5;
+    int16_t max_fill_w = body_w - 2 * (border + pad);
+    int16_t fill_x     = body_x + border + pad;
+    int16_t fill_y     = body_y + border + pad;
+    int16_t nub_x      = body_x + body_w;
+    int16_t nub_y      = body_y + (body_h - nub_h) / 2;
+
+    // Nub - always filled (positive terminal)
+    graphics_context_set_fill_color(ctx, batt_fill);
+    graphics_fill_rect(ctx, GRect(nub_x, nub_y, nub_w, nub_h), 0, GCornerNone);
+
+    // Body outline (1px stroke, sharp corners)
+    graphics_context_set_stroke_color(ctx, batt_fill);
+    graphics_draw_rect(ctx, GRect(body_x, body_y, body_w, body_h));
+
+    // Fill bar (based on battery %)
+    if (battery_pct > 0 && max_fill_w > 0) {
+      int16_t fill_w = (int16_t)(max_fill_w * battery_pct / 100);
+      if (fill_w > 0) {
+        graphics_context_set_fill_color(ctx, batt_fill);
+        graphics_fill_rect(ctx, GRect(fill_x, fill_y, fill_w, fill_h), 0, GCornerNone);
+      }
     }
   }
 #endif

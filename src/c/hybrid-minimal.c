@@ -28,13 +28,13 @@ static char s_weather_cond[16] = "";
 // Cached draw command images
 static GDrawCommandImage *s_icon_steps = NULL;
 
-// Recolor all black strokes/fills in a PDC to green (called once at load)
-static bool prv_recolor_to_green(GDrawCommand *cmd, uint32_t idx, void *context) {
-  GColor green = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+// Recolor all black strokes/fills in a PDC to a target color (called once at load)
+static bool prv_recolor_black_to(GDrawCommand *cmd, uint32_t idx, void *context) {
+  GColor target = *(GColor *)context;
   if (gcolor_equal(gdraw_command_get_fill_color(cmd), GColorBlack))
-    gdraw_command_set_fill_color(cmd, green);
+    gdraw_command_set_fill_color(cmd, target);
   if (gcolor_equal(gdraw_command_get_stroke_color(cmd), GColorBlack))
-    gdraw_command_set_stroke_color(cmd, green);
+    gdraw_command_set_stroke_color(cmd, target);
   return true;
 }
 
@@ -116,12 +116,13 @@ static void prv_window_load(Window *window) {
   // Seed initial step count
   s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
 
-  // Load cached PDC icon and recolor black → green
+  // Load cached PDC icon and recolor black to green
+  GColor green = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
   s_icon_steps = gdraw_command_image_create_with_resource(RESOURCE_ID_ICON_STEPS);
   if (s_icon_steps) {
     gdraw_command_list_iterate(
       gdraw_command_image_get_command_list(s_icon_steps),
-      prv_recolor_to_green, NULL);
+      prv_recolor_black_to, &green);
   }
 }
 
