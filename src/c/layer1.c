@@ -192,7 +192,7 @@ void layer1_update(Layer *layer, GContext *ctx, struct tm *current_time) {
       graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
-      GRect text_box = GRect(pos.x - 10, pos.y - 9, 20, 18);
+      GRect text_box = GRect(pos.x - 14, pos.y - 9, 28, 20);
       graphics_draw_text(ctx, hour_str,
                          fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS),
                          text_box, GTextOverflowModeTrailingEllipsis,

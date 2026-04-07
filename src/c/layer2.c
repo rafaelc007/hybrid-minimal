@@ -2,26 +2,7 @@
 #include "utils.h"
 
 // ============================================================================
-// Quarter-arc progress bar (round screens — battery only)
-// ============================================================================
-#ifdef PBL_ROUND
-static void draw_quarter_arc(GContext *ctx, GRect rect, int16_t thickness,
-                              GColor fill_color, GColor track_color,
-                              int32_t start_angle, int32_t end_angle,
-                              int value, int max) {
-  graphics_context_set_fill_color(ctx, track_color);
-  graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle,
-                       thickness, start_angle, end_angle);
-  if (value > 0 && max > 0) {
-    int clamped = value > max ? max : value;
-    int32_t fill_end = start_angle +
-      (int32_t)((int64_t)clamped * (end_angle - start_angle) / max);
-    graphics_context_set_fill_color(ctx, fill_color);
-    graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle,
-                         thickness, start_angle, fill_end);
-  }
-}
-#endif
+// Battery arc outline (round screens)
 
 // ============================================================================
 // Layer 2 update
@@ -67,13 +48,46 @@ void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_go
 
 #ifdef PBL_ROUND
   {
+    // Battery arc outline: 1px outer border + 1px gap + 4px fill + 1px gap + 1px inner border
+    int16_t border  = 1;
+    int16_t pad     = 1;
+    int16_t fill_t  = 4;
+    int16_t outer_t = border + pad + fill_t + pad + border;  // 8px total
+
     GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
-    GRect bar_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w,
+    GRect arc_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w,
                                                       mid_inset_h, mid_inset_w));
-    draw_quarter_arc(ctx, bar_rect, bar_thickness,
-                     batt_fill, track_color,
-                     DEG_TO_TRIGANGLE(135), DEG_TO_TRIGANGLE(225),
-                     battery_pct, 100);
+    int32_t start_angle = DEG_TO_TRIGANGLE(135);
+    int32_t end_angle   = DEG_TO_TRIGANGLE(225);
+
+    // 1. Outer shell in batt_fill (full range) — forms both borders
+    graphics_context_set_fill_color(ctx, batt_fill);
+    graphics_fill_radial(ctx, arc_rect, GOvalScaleModeFitCircle,
+                         outer_t, start_angle, end_angle);
+
+    // 2. Hollow out interior with track_color, preserving 1px outer + 1px inner borders
+    GRect hollow_rect = grect_inset(arc_rect, GEdgeInsets(border));
+    graphics_context_set_fill_color(ctx, track_color);
+    graphics_fill_radial(ctx, hollow_rect, GOvalScaleModeFitCircle,
+                         outer_t - 2 * border, start_angle, end_angle);
+
+    // 3. Fill level bar
+    if (battery_pct > 0) {
+      GRect fill_rect = grect_inset(arc_rect, GEdgeInsets(border + pad));
+      int32_t fill_end = start_angle +
+        (int32_t)((int64_t)battery_pct * (end_angle - start_angle) / 100);
+      graphics_context_set_fill_color(ctx, batt_fill);
+      graphics_fill_radial(ctx, fill_rect, GOvalScaleModeFitCircle,
+                           fill_t, start_angle, fill_end);
+    }
+
+    // 4. Nub at the end of the arc (positive terminal)
+    GRect nub_arc_rect = grect_inset(arc_rect, GEdgeInsets(outer_t / 2));
+    GPoint nub_pt = gpoint_from_polar(nub_arc_rect, GOvalScaleModeFitCircle, end_angle);
+    GPoint end = gpoint_from_polar(nub_arc_rect, GOvalScaleModeFitCircle, end_angle+DEG_TO_TRIGANGLE(1));
+    graphics_context_set_stroke_color(ctx, batt_fill);
+    graphics_context_set_stroke_width(ctx, 2);
+    graphics_draw_line(ctx, nub_pt, end);
   }
 #else
   (void)mid_inset_w; (void)mid_inset_h;

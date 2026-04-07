@@ -15,7 +15,8 @@
       "basalt",
       "chalk",
       "diorite",
-      "emery"
+      "emery",
+      "gabbro"
     ],
     "watchapp": {
       "watchface": true
@@ -37,7 +38,7 @@
         {
           "type": "raw",
           "name": "WEATHER_GENERIC",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Generic_weather_half.pdc"
         },
         {
@@ -49,7 +50,7 @@
         {
           "type": "raw",
           "name": "WEATHER_CLEAR",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Sunny_day_half.pdc"
         },
         {
@@ -61,7 +62,7 @@
         {
           "type": "raw",
           "name": "WEATHER_PARTLY_CLOUDY",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Partly_cloudy_half.pdc"
         },
         {
@@ -73,7 +74,7 @@
         {
           "type": "raw",
           "name": "WEATHER_LIGHT_RAIN",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Light_rain_half.pdc"
         },
         {
@@ -85,7 +86,7 @@
         {
           "type": "raw",
           "name": "WEATHER_HEAVY_RAIN",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Heavy_rain_half.pdc"
         },
         {
@@ -97,7 +98,7 @@
         {
           "type": "raw",
           "name": "WEATHER_LIGHT_SNOW",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Light_snow_half.pdc"
         },
         {
@@ -109,7 +110,7 @@
         {
           "type": "raw",
           "name": "WEATHER_HEAVY_SNOW",
-          "targetPlatforms": ["emery"],
+          "targetPlatforms": ["emery", "gabbro"],
           "file": "images/Pebble_50x50_Heavy_snow_half.pdc"
         },
         {
