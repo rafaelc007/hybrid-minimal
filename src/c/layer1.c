@@ -90,7 +90,7 @@ static void rect_draw_progress(GContext *ctx, GRect outer, int16_t band,
 // ============================================================================
 // Background + minute progress band (repainted every minute)
 // ============================================================================
-void layer1_bg_update(Layer *layer, GContext *ctx, int minute) {
+void layer1_bg_update(Layer *layer, GContext *ctx, int minute, GColor progress_color) {
   GRect bounds = layer_get_bounds(layer);
 
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -105,7 +105,7 @@ void layer1_bg_update(Layer *layer, GContext *ctx, int minute) {
     int16_t band = 10;
     GRect arc_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
-    graphics_context_set_fill_color(ctx, GColorJazzberryJam);
+    graphics_context_set_fill_color(ctx, progress_color);
     graphics_fill_radial(ctx, arc_rect, GOvalScaleModeFitCircle,
                          band, DEG_TO_TRIGANGLE(0), progress_angle);
   }
@@ -115,7 +115,7 @@ void layer1_bg_update(Layer *layer, GContext *ctx, int minute) {
     int16_t band = 8;
     GRect prog_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
-    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorJazzberryJam, GColorLightGray));
+    graphics_context_set_fill_color(ctx, progress_color);
     rect_draw_progress(ctx, prog_rect, band, minute, 60);
   }
 #endif

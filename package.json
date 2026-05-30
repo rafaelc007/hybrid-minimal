@@ -29,7 +29,8 @@
       "HourFormat",
       "VibrateOnDisconnect",
       "SlotOrder",
-      "RequestWeather"
+      "RequestWeather",
+      "ProgressColor"
     ],
     "resources": {
       "media": [

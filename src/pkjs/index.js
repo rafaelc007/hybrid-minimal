@@ -6,6 +6,22 @@
 var WIDGETS = ['Steps', 'Battery', 'Time', 'Date', 'Weather'];
 var DEFAULT_ORDER = [0, 1, 2, 3, 4];
 
+// Progress band color palette — values are Pebble GColor8 ARGB8 bytes.
+var COLORS = [
+  { name: 'Jazzberry', css: '#AA0055', argb: 0xE1 },
+  { name: 'Red',       css: '#FF0000', argb: 0xF0 },
+  { name: 'Orange',    css: '#FF5500', argb: 0xF4 },
+  { name: 'Yellow',    css: '#FFFF00', argb: 0xFC },
+  { name: 'Green',     css: '#00FF00', argb: 0xCC },
+  { name: 'Cyan',      css: '#00FFFF', argb: 0xCF },
+  { name: 'Blue',      css: '#0000FF', argb: 0xC3 },
+  { name: 'Picton',    css: '#00AAFF', argb: 0xCB },
+  { name: 'Magenta',   css: '#FF00FF', argb: 0xF3 },
+  { name: 'White',     css: '#FFFFFF', argb: 0xFF },
+  { name: 'Gray',      css: '#AAAAAA', argb: 0xEA }
+];
+var DEFAULT_COLOR_ARGB = 0xE1; // Jazzberry
+
 // ----------------------------------------------------------------------------
 // Weather (Open-Meteo)
 // ----------------------------------------------------------------------------
@@ -73,9 +89,18 @@ function getSavedOrder() {
   return DEFAULT_ORDER.slice();
 }
 
+function getSavedColor() {
+  var raw = localStorage.getItem('progressColor');
+  if (raw === null) return DEFAULT_COLOR_ARGB;
+  var n = parseInt(raw, 10);
+  return isNaN(n) ? DEFAULT_COLOR_ARGB : (n & 0xFF);
+}
+
 function buildConfigHtml(order) {
   var labelsJson = JSON.stringify(WIDGETS);
   var orderJson  = JSON.stringify(order);
+  var colorsJson = JSON.stringify(COLORS);
+  var selectedColor = getSavedColor();
   return '<!doctype html>' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -90,6 +115,9 @@ function buildConfigHtml(order) {
 '.name{flex:1;font-size:15px}' +
 'button{background:#555;color:#fff;border:0;border-radius:4px;width:32px;height:32px;font-size:18px;margin-left:4px}' +
 'button:disabled{opacity:.3}' +
+'.swatches{display:flex;flex-wrap:wrap;gap:8px}' +
+'.sw{width:40px;height:40px;border-radius:50%;border:3px solid #222;cursor:pointer;box-sizing:border-box}' +
+'.sw.sel{border-color:#fff}' +
 '.save{display:block;width:100%;background:#0a84ff;border:0;color:#fff;padding:14px;font-size:16px;border-radius:8px;margin-top:24px}' +
 '</style></head><body>' +
 '<h1>Widget Order</h1>' +
@@ -98,10 +126,14 @@ function buildConfigHtml(order) {
 '<ul id="outer"></ul>' +
 '<div class="zone">Inner stack (top \u2192 bottom)</div>' +
 '<ul id="inner"></ul>' +
+'<div class="zone">Progress bar color</div>' +
+'<div class="swatches" id="sw"></div>' +
 '<button class="save" id="save">Save</button>' +
 '<script>' +
 'var labels=' + labelsJson + ';' +
 'var order=' + orderJson + ';' +
+'var colors=' + colorsJson + ';' +
+'var selColor=' + selectedColor + ';' +
 'function render(){' +
 '  var outer=document.getElementById("outer");' +
 '  var inner=document.getElementById("inner");' +
@@ -119,10 +151,18 @@ function buildConfigHtml(order) {
 '    li.appendChild(name);li.appendChild(up);li.appendChild(dn);' +
 '    (idx<2?outer:inner).appendChild(li);' +
 '  });' +
+'  var sw=document.getElementById("sw");sw.innerHTML="";' +
+'  colors.forEach(function(c){' +
+'    var d=document.createElement("div");' +
+'    d.className="sw"+(c.argb===selColor?" sel":"");' +
+'    d.style.background=c.css;d.title=c.name;' +
+'    d.onclick=function(){selColor=c.argb;render();};' +
+'    sw.appendChild(d);' +
+'  });' +
 '}' +
 'render();' +
 'document.getElementById("save").onclick=function(){' +
-'  var payload=encodeURIComponent(JSON.stringify({order:order}));' +
+'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor}));' +
 '  document.location="pebblejs://close#"+payload;' +
 '};' +
 '</script></body></html>';
@@ -138,13 +178,20 @@ Pebble.addEventListener('webviewclosed', function(e) {
   if (!e || !e.response) return;
   try {
     var cfg = JSON.parse(decodeURIComponent(e.response));
+    var msg = {};
     if (cfg && Array.isArray(cfg.order) && cfg.order.length === WIDGETS.length) {
       localStorage.setItem('slotOrder', JSON.stringify(cfg.order));
-      Pebble.sendAppMessage(
-        { SlotOrder: cfg.order },
-        function() { console.log('SlotOrder sent: ' + cfg.order.join(',')); },
-        function(err) { console.log('SlotOrder send failed: ' + JSON.stringify(err)); }
-      );
+      msg.SlotOrder = cfg.order;
+    }
+    if (cfg && typeof cfg.color === 'number') {
+      var argb = cfg.color & 0xFF;
+      localStorage.setItem('progressColor', String(argb));
+      msg.ProgressColor = argb;
+    }
+    if (Object.keys(msg).length) {
+      Pebble.sendAppMessage(msg,
+        function() { console.log('Settings sent: ' + JSON.stringify(msg)); },
+        function(err) { console.log('Settings send failed: ' + JSON.stringify(err)); });
     }
   } catch (e) {
     console.log('Config parse error: ' + e);

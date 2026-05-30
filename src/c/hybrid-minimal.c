@@ -5,6 +5,7 @@
 #include "widgets.h"
 
 #define PERSIST_KEY_SLOT_ORDER 1
+#define PERSIST_KEY_PROGRESS_COLOR 2
 #define SLOT_COUNT 5
 
 // Refresh weather every 30 minutes from the watch.
@@ -51,6 +52,13 @@ static GDrawCommandImage *s_resolved_weather_icon = NULL;
 static uint8_t s_slot_order[SLOT_COUNT] = {
   WIDGET_STEPS, WIDGET_BATTERY, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER
 };
+
+// Progress band color (GColor8.argb). Defaults differ per display.
+#ifdef PBL_COLOR
+static uint8_t s_progress_color_argb = 0;  // set in prv_init from GColorJazzberryJam
+#else
+static uint8_t s_progress_color_argb = 0;  // set in prv_init from GColorLightGray
+#endif
 
 // ============================================================================
 // PDC color helpers (called once at load)
@@ -109,7 +117,8 @@ static WidgetState prv_build_widget_state(void) {
 // Layer update procs
 // ============================================================================
 static void prv_layer1_bg_update(Layer *layer, GContext *ctx) {
-  layer1_bg_update(layer, ctx, s_current_time.tm_min);
+  GColor c = (GColor){ .argb = s_progress_color_argb };
+  layer1_bg_update(layer, ctx, s_current_time.tm_min, c);
 }
 
 static void prv_layer1_chrome_update(Layer *layer, GContext *ctx) {
@@ -274,6 +283,7 @@ static void prv_window_unload(Window *window) {
 static void prv_inbox_received_handler(DictionaryIterator *received, void *context) {
   bool weather_changed = false;
   bool order_changed   = false;
+  bool color_changed   = false;
 
   Tuple *temp_t = dict_find(received, MESSAGE_KEY_WeatherTemp);
   if (temp_t) {
@@ -315,9 +325,22 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     }
   }
 
+  Tuple *color_t = dict_find(received, MESSAGE_KEY_ProgressColor);
+  if (color_t) {
+    uint8_t new_argb = (uint8_t)color_t->value->int32;
+    if (new_argb != s_progress_color_argb) {
+      s_progress_color_argb = new_argb;
+      persist_write_int(PERSIST_KEY_PROGRESS_COLOR, (int32_t)new_argb);
+      color_changed = true;
+    }
+  }
+
   if (weather_changed || order_changed) {
     layer_mark_dirty(s_layer2);
     layer_mark_dirty(s_layer2_inner);
+  }
+  if (color_changed) {
+    layer_mark_dirty(s_layer1_bg);
   }
 }
 
@@ -325,6 +348,9 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
 // Init / Deinit
 // ============================================================================
 static void prv_init(void) {
+  // Default progress color depends on display type.
+  s_progress_color_argb = PBL_IF_COLOR_ELSE(GColorJazzberryJam, GColorLightGray).argb;
+
   // Restore persisted slot order if present and valid.
   if (persist_exists(PERSIST_KEY_SLOT_ORDER)) {
     uint8_t buf[SLOT_COUNT];
@@ -338,6 +364,10 @@ static void prv_init(void) {
       }
       if (ok) memcpy(s_slot_order, buf, SLOT_COUNT);
     }
+  }
+
+  if (persist_exists(PERSIST_KEY_PROGRESS_COLOR)) {
+    s_progress_color_argb = (uint8_t)persist_read_int(PERSIST_KEY_PROGRESS_COLOR);
   }
 
   s_window = window_create();
