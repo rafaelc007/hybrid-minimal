@@ -7,36 +7,31 @@
 #define PERSIST_KEY_SLOT_ORDER 1
 #define SLOT_COUNT 5
 
-// Default order: outer = steps, battery; inner = time, date, weather
-static uint8_t s_slot_order[SLOT_COUNT] = {
-  WIDGET_STEPS, WIDGET_BATTERY, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER
-};
+// Refresh weather every 30 minutes from the watch.
+#define WEATHER_REFRESH_MINUTES 30
 
 // ============================================================================
-// Hybrid Minimal Watchface — Main Entry Point
+// State
 // ============================================================================
-
 static Window *s_window;
-static Layer *s_layer1;        // base — full screen
-static Layer *s_layer2;        // middle — 4/6 (steps + battery)
-static Layer *s_layer2_inner;  // inner — 2/6 (date, time, weather)
+static Layer *s_layer1_bg;     // black bg + minute progress (minute-rate)
+static Layer *s_layer1_chrome; // ticks + hour numbers      (hour-rate)
+static Layer *s_layer2;        // outer strips: steps + battery
+static Layer *s_layer2_inner;  // inner stack: time, date, weather
 
-// Current time cache
 static struct tm s_current_time;
+static int s_last_drawn_hour12 = -1;
 
-// Battery & steps state
-static uint8_t s_battery_pct = 100;
+static uint8_t  s_battery_pct = 100;
 static uint32_t s_steps = 0;
 static uint32_t s_step_goal = 10000;
 
-// Weather state
-static int s_weather_temp = -999;  // -999 = no data
+static int  s_weather_temp = -999;
 static char s_weather_cond[16] = "";
 
-// Cached draw command images
+// Cached PDC images
 static GDrawCommandImage *s_icon_steps = NULL;
 
-// Weather icons (order must match WEATHER_IDX_* enum below)
 #define NUM_WEATHER_ICONS 7
 typedef enum {
   WEATHER_IDX_GENERIC = 0,
@@ -49,7 +44,17 @@ typedef enum {
 } WeatherIconIndex;
 static GDrawCommandImage *s_weather_icons[NUM_WEATHER_ICONS];
 
-// Recolor all black strokes/fills in a PDC to a target color (called once at load)
+// Resolved weather icon, computed only when WeatherIcon changes (not per redraw).
+static GDrawCommandImage *s_resolved_weather_icon = NULL;
+
+// Default order: outer = steps, battery; inner = time, date, weather
+static uint8_t s_slot_order[SLOT_COUNT] = {
+  WIDGET_STEPS, WIDGET_BATTERY, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER
+};
+
+// ============================================================================
+// PDC color helpers (called once at load)
+// ============================================================================
 static bool prv_recolor_black_to(GDrawCommand *cmd, uint32_t idx, void *context) {
   GColor target = *(GColor *)context;
   if (gcolor_equal(gdraw_command_get_fill_color(cmd), GColorBlack))
@@ -59,20 +64,6 @@ static bool prv_recolor_black_to(GDrawCommand *cmd, uint32_t idx, void *context)
   return true;
 }
 
-// Returns the weather icon matching s_weather_cond (expects lowercase tokens from JS)
-static GDrawCommandImage *prv_get_weather_icon(void) {
-  const char *c = s_weather_cond;
-  if (s_weather_temp == -999 || !c || c[0] == '\0') return NULL;
-  if (strstr(c, "sun")     || strstr(c, "clear"))   return s_weather_icons[WEATHER_IDX_CLEAR];
-  if (strstr(c, "cloud")   || strstr(c, "overcast")) return s_weather_icons[WEATHER_IDX_PARTLY_CLOUDY];
-  if (strstr(c, "drizzle"))                           return s_weather_icons[WEATHER_IDX_LIGHT_RAIN];
-  if (strstr(c, "rain")    || strstr(c, "thunder"))  return s_weather_icons[WEATHER_IDX_HEAVY_RAIN];
-  if (strstr(c, "sleet"))                             return s_weather_icons[WEATHER_IDX_LIGHT_SNOW];
-  if (strstr(c, "snow"))                              return s_weather_icons[WEATHER_IDX_HEAVY_SNOW];
-  return s_weather_icons[WEATHER_IDX_GENERIC];
-}
-
-// Invert black<->white on a draw command (called once at load for weather icons)
 static bool prv_invert_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
   GColor fc = gdraw_command_get_fill_color(cmd);
   if (gcolor_equal(fc, GColorBlack)) gdraw_command_set_fill_color(cmd, GColorWhite);
@@ -84,68 +75,111 @@ static bool prv_invert_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
 }
 
 // ============================================================================
-// Layer update proc wrappers (bridge to per-layer modules)
+// Weather icon resolution — done once on receipt, then cached.
 // ============================================================================
-static void prv_layer1_update(Layer *layer, GContext *ctx) {
-  layer1_update(layer, ctx, &s_current_time);
+static GDrawCommandImage *prv_resolve_weather_icon(void) {
+  const char *c = s_weather_cond;
+  if (s_weather_temp == -999 || !c || c[0] == '\0') return NULL;
+  if (strstr(c, "sun")     || strstr(c, "clear"))    return s_weather_icons[WEATHER_IDX_CLEAR];
+  if (strstr(c, "cloud")   || strstr(c, "overcast")) return s_weather_icons[WEATHER_IDX_PARTLY_CLOUDY];
+  if (strstr(c, "drizzle"))                          return s_weather_icons[WEATHER_IDX_LIGHT_RAIN];
+  if (strstr(c, "rain")    || strstr(c, "thunder"))  return s_weather_icons[WEATHER_IDX_HEAVY_RAIN];
+  if (strstr(c, "sleet"))                            return s_weather_icons[WEATHER_IDX_LIGHT_SNOW];
+  if (strstr(c, "snow"))                             return s_weather_icons[WEATHER_IDX_HEAVY_SNOW];
+  return s_weather_icons[WEATHER_IDX_GENERIC];
 }
 
-static void prv_layer2_update(Layer *layer, GContext *ctx) {
-  WidgetState st = {
-    .steps = s_steps,
-    .step_goal = s_step_goal,
-    .battery_pct = s_battery_pct,
+// ============================================================================
+// Shared WidgetState builder (icon already resolved → no per-redraw strstr).
+// ============================================================================
+static WidgetState prv_build_widget_state(void) {
+  return (WidgetState){
+    .steps        = s_steps,
+    .step_goal    = s_step_goal,
+    .battery_pct  = s_battery_pct,
     .current_time = &s_current_time,
     .weather_temp = s_weather_temp,
     .weather_cond = s_weather_cond,
-    .icon_steps = s_icon_steps,
-    .icon_weather = prv_get_weather_icon(),
+    .icon_steps   = s_icon_steps,
+    .icon_weather = s_resolved_weather_icon,
   };
+}
+
+// ============================================================================
+// Layer update procs
+// ============================================================================
+static void prv_layer1_bg_update(Layer *layer, GContext *ctx) {
+  layer1_bg_update(layer, ctx, s_current_time.tm_min);
+}
+
+static void prv_layer1_chrome_update(Layer *layer, GContext *ctx) {
+  int h12 = s_current_time.tm_hour % 12;
+  if (h12 == 0) h12 = 12;
+  layer1_chrome_update(layer, ctx, h12);
+}
+
+static void prv_layer2_update(Layer *layer, GContext *ctx) {
+  WidgetState st = prv_build_widget_state();
   layer2_update(layer, ctx, s_slot_order, &st);
 }
 
 static void prv_layer2_inner_update(Layer *layer, GContext *ctx) {
-  WidgetState st = {
-    .steps = s_steps,
-    .step_goal = s_step_goal,
-    .battery_pct = s_battery_pct,
-    .current_time = &s_current_time,
-    .weather_temp = s_weather_temp,
-    .weather_cond = s_weather_cond,
-    .icon_steps = s_icon_steps,
-    .icon_weather = prv_get_weather_icon(),
-  };
+  WidgetState st = prv_build_widget_state();
   layer2_inner_update(layer, ctx, s_slot_order, &st);
 }
 
 // ============================================================================
-// Tick timer handler
+// Outbound: request fresh weather from the phone
+// ============================================================================
+static void prv_request_weather(void) {
+  DictionaryIterator *iter;
+  if (app_message_outbox_begin(&iter) != APP_MSG_OK) return;
+  dict_write_uint8(iter, MESSAGE_KEY_RequestWeather, 1);
+  app_message_outbox_send();
+}
+
+// ============================================================================
+// Tick handler — minute-rate. Mark only the layers whose displayed values
+// actually changed.
 // ============================================================================
 static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   s_current_time = *tick_time;
-  layer_mark_dirty(s_layer1);
-  layer_mark_dirty(s_layer2);
+
+  // BG (progress + bg fill) changes every minute.
+  layer_mark_dirty(s_layer1_bg);
+
+  // Chrome only changes on the hour (current hour highlight).
+  int h12 = s_current_time.tm_hour % 12;
+  if (h12 == 0) h12 = 12;
+  if (h12 != s_last_drawn_hour12) {
+    s_last_drawn_hour12 = h12;
+    layer_mark_dirty(s_layer1_chrome);
+  }
+
+  // Time/date display lives in the inner stack — redraw every minute.
   layer_mark_dirty(s_layer2_inner);
+
+  // Refresh step count from health service once per minute (cheaper than
+  // subscribing to movement events that fire many times per minute).
+  uint32_t new_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
+  if (new_steps != s_steps) {
+    s_steps = new_steps;
+    layer_mark_dirty(s_layer2);  // steps live in the outer strips
+  }
+
+  // Periodic weather refresh.
+  if ((tick_time->tm_min % WEATHER_REFRESH_MINUTES) == 0) {
+    prv_request_weather();
+  }
 }
 
 // ============================================================================
-// Battery service handler
+// Battery service handler — only repaint when the displayed value changed.
 // ============================================================================
 static void prv_battery_handler(BatteryChargeState charge) {
+  if (charge.charge_percent == s_battery_pct) return;
   s_battery_pct = charge.charge_percent;
-  layer_mark_dirty(s_layer2);
-  layer_mark_dirty(s_layer2_inner);
-}
-
-// ============================================================================
-// Health service handler
-// ============================================================================
-static void prv_health_handler(HealthEventType event, void *context) {
-  if (event == HealthEventMovementUpdate || event == HealthEventSignificantUpdate) {
-    s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
-    layer_mark_dirty(s_layer2);
-    layer_mark_dirty(s_layer2_inner);
-  }
+  layer_mark_dirty(s_layer2);  // battery lives in the outer strips
 }
 
 // ============================================================================
@@ -155,19 +189,23 @@ static void prv_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  // Layer 1: full screen
-  s_layer1 = layer_create(bounds);
-  layer_set_update_proc(s_layer1, prv_layer1_update);
-  layer_add_child(window_layer, s_layer1);
+  // Layer 1 background + progress (bottom)
+  s_layer1_bg = layer_create(bounds);
+  layer_set_update_proc(s_layer1_bg, prv_layer1_bg_update);
+  layer_add_child(window_layer, s_layer1_bg);
 
-  // Layer 2: 19/30 of screen, centered
+  // Layer 1 chrome (ticks + numbers) — sits on top of bg, transparent elsewhere
+  s_layer1_chrome = layer_create(bounds);
+  layer_set_update_proc(s_layer1_chrome, prv_layer1_chrome_update);
+  layer_add_child(window_layer, s_layer1_chrome);
+
+  // Layer 2 outer: 19/30 of screen, centered
   GRect layer2_rect = utils_get_centered_rect(bounds, 19, 30);
   s_layer2 = layer_create(layer2_rect);
   layer_set_update_proc(s_layer2, prv_layer2_update);
   layer_add_child(window_layer, s_layer2);
 
-  // Layer 2 inner: large screens get a wider inner region so big-numeric
-  // fonts (LECO_32) fit; small screens stick with 11/30.
+  // Layer 2 inner: wider on large screens so big-numeric fonts fit.
 #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
   GRect layer2_inner_rect = utils_get_centered_rect(bounds, 15, 30);
 #else
@@ -177,18 +215,17 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_layer2_inner, prv_layer2_inner_update);
   layer_add_child(window_layer, s_layer2_inner);
 
-  // Seed initial time
+  // Seed time + chrome cache
   time_t now = time(NULL);
   s_current_time = *localtime(&now);
+  s_last_drawn_hour12 = s_current_time.tm_hour % 12;
+  if (s_last_drawn_hour12 == 0) s_last_drawn_hour12 = 12;
 
-  // Seed initial battery state
-  BatteryChargeState batt = battery_state_service_peek();
-  s_battery_pct = batt.charge_percent;
-
-  // Seed initial step count
+  // Seed battery + steps
+  s_battery_pct = battery_state_service_peek().charge_percent;
   s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
 
-  // Load cached PDC icon and recolor black to green
+  // Steps icon (PDC) — recolor black → green once at load
   GColor green = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
   s_icon_steps = gdraw_command_image_create_with_resource(RESOURCE_ID_ICON_STEPS);
   if (s_icon_steps) {
@@ -197,9 +234,8 @@ static void prv_window_load(Window *window) {
       prv_recolor_black_to, &green);
   }
 
-  // Load pre-scaled weather icons (already sized for this platform via targetPlatforms
-  // in package.json: emery gets _half.pdc at 25x25, small screens get _small.pdc at 16x16).
-  // Only invert colors (icons are black-on-transparent; watchface background is dark).
+  // Pre-scaled weather icons (sized per platform via package.json). Invert
+  // black<->white once at load.
   static const uint32_t s_weather_res_ids[NUM_WEATHER_ICONS] = {
     RESOURCE_ID_WEATHER_GENERIC,
     RESOURCE_ID_WEATHER_CLEAR,
@@ -212,8 +248,9 @@ static void prv_window_load(Window *window) {
   for (int i = 0; i < NUM_WEATHER_ICONS; i++) {
     s_weather_icons[i] = gdraw_command_image_create_with_resource(s_weather_res_ids[i]);
     if (s_weather_icons[i]) {
-      GDrawCommandList *list = gdraw_command_image_get_command_list(s_weather_icons[i]);
-      gdraw_command_list_iterate(list, prv_invert_cmd, NULL);
+      gdraw_command_list_iterate(
+        gdraw_command_image_get_command_list(s_weather_icons[i]),
+        prv_invert_cmd, NULL);
     }
   }
 }
@@ -227,27 +264,43 @@ static void prv_window_unload(Window *window) {
   }
   layer_destroy(s_layer2_inner);
   layer_destroy(s_layer2);
-  layer_destroy(s_layer1);
+  layer_destroy(s_layer1_chrome);
+  layer_destroy(s_layer1_bg);
 }
 
 // ============================================================================
-// AppMessage handler (receives weather data from JS)
+// AppMessage inbox
 // ============================================================================
 static void prv_inbox_received_handler(DictionaryIterator *received, void *context) {
+  bool weather_changed = false;
+  bool order_changed   = false;
+
   Tuple *temp_t = dict_find(received, MESSAGE_KEY_WeatherTemp);
   if (temp_t) {
-    s_weather_temp = (int)temp_t->value->int32;
+    int new_temp = (int)temp_t->value->int32;
+    if (new_temp != s_weather_temp) {
+      s_weather_temp = new_temp;
+      weather_changed = true;
+    }
   }
+
   Tuple *icon_t = dict_find(received, MESSAGE_KEY_WeatherIcon);
   if (icon_t && icon_t->type == TUPLE_CSTRING) {
-    strncpy(s_weather_cond, icon_t->value->cstring, sizeof(s_weather_cond) - 1);
-    s_weather_cond[sizeof(s_weather_cond) - 1] = '\0';
+    if (strncmp(s_weather_cond, icon_t->value->cstring,
+                sizeof(s_weather_cond)) != 0) {
+      strncpy(s_weather_cond, icon_t->value->cstring, sizeof(s_weather_cond) - 1);
+      s_weather_cond[sizeof(s_weather_cond) - 1] = '\0';
+      weather_changed = true;
+    }
   }
+
+  if (weather_changed) {
+    s_resolved_weather_icon = prv_resolve_weather_icon();
+  }
+
   Tuple *order_t = dict_find(received, MESSAGE_KEY_SlotOrder);
   if (order_t && order_t->type == TUPLE_BYTE_ARRAY &&
       order_t->length >= SLOT_COUNT) {
-    // Validate: each byte must be a known widget id and the set must be a
-    // permutation of {0..SLOT_COUNT-1}.
     uint8_t seen[WIDGET_COUNT] = {0};
     bool ok = true;
     for (int i = 0; i < SLOT_COUNT; i++) {
@@ -255,13 +308,17 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
       if (v >= WIDGET_COUNT || seen[v]) { ok = false; break; }
       seen[v] = 1;
     }
-    if (ok) {
+    if (ok && memcmp(s_slot_order, order_t->value->data, SLOT_COUNT) != 0) {
       memcpy(s_slot_order, order_t->value->data, SLOT_COUNT);
       persist_write_data(PERSIST_KEY_SLOT_ORDER, s_slot_order, SLOT_COUNT);
+      order_changed = true;
     }
   }
-  layer_mark_dirty(s_layer2);
-  layer_mark_dirty(s_layer2_inner);
+
+  if (weather_changed || order_changed) {
+    layer_mark_dirty(s_layer2);
+    layer_mark_dirty(s_layer2_inner);
+  }
 }
 
 // ============================================================================
@@ -290,24 +347,18 @@ static void prv_init(void) {
   });
   window_stack_push(s_window, true);
 
-  // Open AppMessage channel for weather data
+  // Register inbox before opening (Pebble requirement).
+  // Buffers sized to actual payloads: temp (8B) + cond (≤24B) + slot order
+  // (≤16B) + dict overhead. 96/32 is comfortably above worst case.
   app_message_register_inbox_received(prv_inbox_received_handler);
-  app_message_open(256, 32);
+  app_message_open(96, 32);
 
-  // Subscribe to minute-level tick updates
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
-
-  // Subscribe to battery updates
   battery_state_service_subscribe(prv_battery_handler);
-
-  // Subscribe to health updates
-  health_service_events_subscribe(prv_health_handler, NULL);
 }
 
 static void prv_deinit(void) {
-  tick_timer_service_unsubscribe();
-  battery_state_service_unsubscribe();
-  health_service_events_unsubscribe();
+  // OS reclaims subscriptions on exit — no need to unsubscribe.
   window_destroy(s_window);
 }
 

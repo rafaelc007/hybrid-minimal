@@ -28,7 +28,8 @@
       "WeatherUnits",
       "HourFormat",
       "VibrateOnDisconnect",
-      "SlotOrder"
+      "SlotOrder",
+      "RequestWeather"
     ],
     "resources": {
       "media": [

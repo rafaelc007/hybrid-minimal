@@ -157,5 +157,7 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('appmessage', function(e) {
-  console.log('Received message from watch: ' + JSON.stringify(e.payload));
+  if (e && e.payload && e.payload.RequestWeather) {
+    fetchWeather();
+  }
 });
