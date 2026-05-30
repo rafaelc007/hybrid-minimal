@@ -1,203 +1,82 @@
 #include "layer2.h"
 #include "utils.h"
 
-// ============================================================================
-// Layer 2 outer update — steps + battery
-// ============================================================================
-void layer2_update(Layer *layer, GContext *ctx, uint32_t steps, uint32_t step_goal,
-                   uint8_t battery_pct, GDrawCommandImage *icon_steps) {
-  GRect bounds = layer_get_bounds(layer);
-  int16_t hw = bounds.size.w / 2;
-
-  GColor steps_color = GColorWhite;
-  GColor batt_fill   = PBL_IF_COLOR_ELSE(GColorCyan, GColorWhite);
-  int16_t bar_thickness = PBL_IF_ROUND_ELSE(8, 6);
-
-  // -- Steps: count centered + step icon to the right --
-  // Layout: [count 40px] [4px gap] [icon 10px], group centered
-  int16_t text_w = 40;
-  int16_t icon_w = 10;
-  int16_t gap    = 4;
-  int16_t group_w = text_w + gap + icon_w;
-  int16_t group_x = hw - group_w / 2;
-  int16_t center_y = bar_thickness + 10;  // near the top of layer 2
-
-  char steps_str[8];
-  snprintf(steps_str, sizeof(steps_str), "%lu", (unsigned long)steps);
-
-  GRect text_box = GRect(group_x, center_y - 7, text_w, 14);
-  graphics_context_set_text_color(ctx, steps_color);
-  graphics_draw_text(ctx, steps_str,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                     text_box, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentRight, NULL);
-
-  GPoint icon_origin = GPoint(group_x + text_w + gap, center_y - 5);
-  if (icon_steps) {
-    GSize icon_size = gdraw_command_image_get_bounds_size(icon_steps);
-    GRect icon_rect = GRect(icon_origin.x, icon_origin.y, icon_size.w, icon_size.h);
-    gdraw_command_image_draw(ctx, icon_steps, icon_rect.origin);
+// Stack `n` widgets (from slot_order[start..start+n)) vertically in `bounds`.
+// Each widget gets its natural height; remaining space becomes equal gaps
+// above/between/below. If natural heights overflow the region, all heights are
+// scaled down proportionally and gaps go to zero.
+static void prv_render_stack(GContext *ctx, GRect bounds, int start, int n,
+                             const uint8_t *slot_order, const WidgetState *state) {
+  int16_t total_natural = 0;
+  int16_t heights[5] = {0};
+  for (int i = 0; i < n; i++) {
+    heights[i] = widget_natural_height((WidgetId)slot_order[start + i]);
+    total_natural += heights[i];
   }
 
-  // -- Battery widget --
-  int16_t mid_inset_w = bounds.size.w / 14;
-  int16_t mid_inset_h = bounds.size.h / 14;
-
-#ifdef PBL_ROUND
-  {
-    // Battery arc outline: 1px outer border + 1px gap + 4px fill + 1px gap + 1px inner border
-    int16_t border  = 1;
-    int16_t pad     = 1;
-    int16_t fill_t  = 4;
-    int16_t outer_t = border + pad + fill_t + pad + border;  // 8px total
-
-    GColor track_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray);
-    GRect arc_rect = grect_inset(bounds, GEdgeInsets(mid_inset_h, mid_inset_w,
-                                                      mid_inset_h, mid_inset_w));
-    int32_t start_angle = DEG_TO_TRIGANGLE(135);
-    int32_t end_angle   = DEG_TO_TRIGANGLE(225);
-
-    // 1. Outer shell in batt_fill (full range) — forms both borders
-    graphics_context_set_fill_color(ctx, batt_fill);
-    graphics_fill_radial(ctx, arc_rect, GOvalScaleModeFitCircle,
-                         outer_t, start_angle, end_angle);
-
-    // 2. Hollow out interior with track_color, preserving 1px outer + 1px inner borders
-    GRect hollow_rect = grect_inset(arc_rect, GEdgeInsets(border));
-    graphics_context_set_fill_color(ctx, track_color);
-    graphics_fill_radial(ctx, hollow_rect, GOvalScaleModeFitCircle,
-                         outer_t - 2 * border, start_angle, end_angle);
-
-    // 3. Fill level bar
-    if (battery_pct > 0) {
-      GRect fill_rect = grect_inset(arc_rect, GEdgeInsets(border + pad));
-      int32_t fill_end = start_angle +
-        (int32_t)((int64_t)battery_pct * (end_angle - start_angle) / 100);
-      graphics_context_set_fill_color(ctx, batt_fill);
-      graphics_fill_radial(ctx, fill_rect, GOvalScaleModeFitCircle,
-                           fill_t, start_angle, fill_end);
+  int16_t avail = bounds.size.h;
+  int16_t gap;
+  if (total_natural >= avail) {
+    // Scale heights to fit; no gaps.
+    for (int i = 0; i < n; i++) {
+      heights[i] = (int16_t)((int32_t)heights[i] * avail / total_natural);
     }
-
-    // 4. Nub at the end of the arc (positive terminal)
-    GRect nub_arc_rect = grect_inset(arc_rect, GEdgeInsets(outer_t / 2));
-    GPoint nub_pt = gpoint_from_polar(nub_arc_rect, GOvalScaleModeFitCircle, end_angle);
-    GPoint end = gpoint_from_polar(nub_arc_rect, GOvalScaleModeFitCircle, end_angle+DEG_TO_TRIGANGLE(1));
-    graphics_context_set_stroke_color(ctx, batt_fill);
-    graphics_context_set_stroke_width(ctx, 2);
-    graphics_draw_line(ctx, nub_pt, end);
+    gap = 0;
+  } else {
+    // Distribute leftover space as (n+1) equal gaps (top, between, bottom).
+    gap = (avail - total_natural) / (n + 1);
   }
-#else
-  (void)mid_inset_w; (void)mid_inset_h;
-  {
-    // Battery contour: 1px border, 1px gap, fill bar, nub on right
-    int16_t border     = 1;
-    int16_t pad        = 1;
-    int16_t fill_h     = 4;
-    int16_t body_h     = fill_h + 2 * (border + pad);  // 8px total
-    int16_t nub_w      = 3;
-    int16_t nub_h      = fill_h;
-    int16_t body_w     = bounds.size.w * 4 / 6;
-    int16_t total_w    = body_w + nub_w;
-    int16_t body_x     = (bounds.size.w - total_w) / 2;
-    int16_t body_y     = bounds.size.h - body_h - 5;
-    int16_t max_fill_w = body_w - 2 * (border + pad);
-    int16_t fill_x     = body_x + border + pad;
-    int16_t fill_y     = body_y + border + pad;
-    int16_t nub_x      = body_x + body_w;
-    int16_t nub_y      = body_y + (body_h - nub_h) / 2;
 
-    // Nub - always filled (positive terminal)
-    graphics_context_set_fill_color(ctx, batt_fill);
-    graphics_fill_rect(ctx, GRect(nub_x, nub_y, nub_w, nub_h), 0, GCornerNone);
-
-    // Body outline (1px stroke, sharp corners)
-    graphics_context_set_stroke_color(ctx, batt_fill);
-    graphics_draw_rect(ctx, GRect(body_x, body_y, body_w, body_h));
-
-    // Fill bar (based on battery %)
-    if (battery_pct > 0 && max_fill_w > 0) {
-      int16_t fill_w = (int16_t)(max_fill_w * battery_pct / 100);
-      if (fill_w > 0) {
-        graphics_context_set_fill_color(ctx, batt_fill);
-        graphics_fill_rect(ctx, GRect(fill_x, fill_y, fill_w, fill_h), 0, GCornerNone);
-      }
-    }
+  int16_t y = bounds.origin.y + gap;
+  for (int i = 0; i < n; i++) {
+    GRect r = GRect(bounds.origin.x, y, bounds.size.w, heights[i]);
+    widget_render(ctx, r, (WidgetId)slot_order[start + i], state);
+    y += heights[i] + gap;
   }
-#endif
 }
 
 // ============================================================================
-// Layer 2 inner update — date, time, weather stack
+// Outer region: 2 slots — one strip above the inner region, one below.
+// The inner layer (11/30 of screen) is centered inside this outer layer
+// (19/30). To avoid overlap we render only in the top and bottom margins.
 // ============================================================================
-void layer2_inner_update(Layer *layer, GContext *ctx, struct tm *current_time,
-                         int weather_temp, const char *weather_cond,
-                         GDrawCommandImage *icon_weather) {
+void layer2_update(Layer *layer, GContext *ctx,
+                   const uint8_t *slot_order, const WidgetState *state) {
   GRect bounds = layer_get_bounds(layer);
+  int16_t pad = 2;
 
-  // Three stacked slots: date (top), weather (middle), digital time (bottom)
-  int16_t padding = 2;
-  int16_t slot_w = bounds.size.w - 2 * padding;
-  int16_t total_h = bounds.size.h - 2 * padding;
-  int16_t slot_h = (total_h - 2 * padding) / 3;
+  // Inner layer is centered inside this outer layer. On large screens
+  // (emery/gabbro) the inner region is 15/30 of the screen (vs outer 19/30),
+  // so inner_h = outer_h * 15/19. On small screens it is 11/30 → 11/19.
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  int16_t inner_h = bounds.size.h * 15 / 19;
+#else
+  int16_t inner_h = bounds.size.h * 11 / 19;
+#endif
+  int16_t margin  = (bounds.size.h - inner_h) / 2;
 
-  GRect top_slot = GRect(padding, padding, slot_w, slot_h);
-  GRect mid_slot = GRect(padding, padding + slot_h + padding, slot_w, slot_h);
-  GRect bot_slot = GRect(padding, padding + 2 * (slot_h + padding), slot_w, slot_h);
+  GRect top_strip = GRect(pad, pad,
+                          bounds.size.w - 2 * pad,
+                          margin - 2 * pad);
+  GRect bot_strip = GRect(pad, margin + inner_h + pad,
+                          bounds.size.w - 2 * pad,
+                          margin - 2 * pad);
 
-  // -- Top: Digital time (hh:mm) --
-  char time_str[6];
-  strftime(time_str, sizeof(time_str),
-           clock_is_24h_style() ? "%H:%M" : "%I:%M", current_time);
-
-  GFont time_font = (bounds.size.w >= 70)
-    ? fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS)
-    : fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, time_str,
-                     time_font,
-                     top_slot, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentCenter, NULL);
-
-  // -- Middle: Date (e.g. "Apr-02") --
-  static const char *months[] = {
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-  };
-  char date_str[8];
-  snprintf(date_str, sizeof(date_str), "%s-%02d",
-           months[current_time->tm_mon], current_time->tm_mday);
-
-  graphics_draw_text(ctx, date_str,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     mid_slot, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentCenter, NULL);
-
-  // -- Bottom: Weather (icon + temp only) --
-  char weather_str[8];
-  if (weather_temp == -999) {
-    snprintf(weather_str, sizeof(weather_str), "--");
-  } else {
-    snprintf(weather_str, sizeof(weather_str), "%d\xc2\xb0 C", weather_temp);
+  if (top_strip.size.h > 0) {
+    widget_render(ctx, top_strip, (WidgetId)slot_order[0], state);
   }
-
-  if (icon_weather) {
-    GSize icon_size = gdraw_command_image_get_bounds_size(icon_weather);
-    int16_t gap     = 3;
-    int16_t text_w  = 36;  // wide enough for "-10°" / "100°" in GOTHIC_14
-    int16_t group_w = icon_size.w + gap + text_w;
-    int16_t group_x = bot_slot.origin.x + (slot_w - group_w) / 2;
-    int16_t icon_y  = bot_slot.origin.y + (slot_h - icon_size.h) / 2;
-    gdraw_command_image_draw(ctx, icon_weather, GPoint(group_x, icon_y));
-    graphics_draw_text(ctx, weather_str,
-                       fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                       GRect(group_x + icon_size.w + gap, bot_slot.origin.y, text_w, slot_h),
-                       GTextOverflowModeTrailingEllipsis,
-                       GTextAlignmentCenter, NULL);
-  } else {
-    graphics_draw_text(ctx, weather_str,
-                       fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                       bot_slot, GTextOverflowModeTrailingEllipsis,
-                       GTextAlignmentCenter, NULL);
+  if (bot_strip.size.h > 0) {
+    widget_render(ctx, bot_strip, (WidgetId)slot_order[1], state);
   }
+}
+
+// ============================================================================
+// Inner region: 3 slots stacked vertically
+// ============================================================================
+void layer2_inner_update(Layer *layer, GContext *ctx,
+                         const uint8_t *slot_order, const WidgetState *state) {
+  GRect bounds = layer_get_bounds(layer);
+  int16_t pad = 2;
+  GRect inset = GRect(pad, pad, bounds.size.w - 2 * pad, bounds.size.h - 2 * pad);
+  prv_render_stack(ctx, inset, 2, 3, slot_order, state);
 }

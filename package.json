@@ -21,12 +21,14 @@
     "watchapp": {
       "watchface": true
     },
+    "capabilities": ["configurable"],
     "messageKeys": [
       "WeatherTemp",
       "WeatherIcon",
       "WeatherUnits",
       "HourFormat",
-      "VibrateOnDisconnect"
+      "VibrateOnDisconnect",
+      "SlotOrder"
     ],
     "resources": {
       "media": [

@@ -2,6 +2,15 @@
 #include "utils.h"
 #include "layer1.h"
 #include "layer2.h"
+#include "widgets.h"
+
+#define PERSIST_KEY_SLOT_ORDER 1
+#define SLOT_COUNT 5
+
+// Default order: outer = steps, battery; inner = time, date, weather
+static uint8_t s_slot_order[SLOT_COUNT] = {
+  WIDGET_STEPS, WIDGET_BATTERY, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER
+};
 
 // ============================================================================
 // Hybrid Minimal Watchface — Main Entry Point
@@ -82,12 +91,31 @@ static void prv_layer1_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer2_update(Layer *layer, GContext *ctx) {
-  layer2_update(layer, ctx, s_steps, s_step_goal, s_battery_pct, s_icon_steps);
+  WidgetState st = {
+    .steps = s_steps,
+    .step_goal = s_step_goal,
+    .battery_pct = s_battery_pct,
+    .current_time = &s_current_time,
+    .weather_temp = s_weather_temp,
+    .weather_cond = s_weather_cond,
+    .icon_steps = s_icon_steps,
+    .icon_weather = prv_get_weather_icon(),
+  };
+  layer2_update(layer, ctx, s_slot_order, &st);
 }
 
 static void prv_layer2_inner_update(Layer *layer, GContext *ctx) {
-  layer2_inner_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond,
-                      prv_get_weather_icon());
+  WidgetState st = {
+    .steps = s_steps,
+    .step_goal = s_step_goal,
+    .battery_pct = s_battery_pct,
+    .current_time = &s_current_time,
+    .weather_temp = s_weather_temp,
+    .weather_cond = s_weather_cond,
+    .icon_steps = s_icon_steps,
+    .icon_weather = prv_get_weather_icon(),
+  };
+  layer2_inner_update(layer, ctx, s_slot_order, &st);
 }
 
 // ============================================================================
@@ -106,6 +134,7 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 static void prv_battery_handler(BatteryChargeState charge) {
   s_battery_pct = charge.charge_percent;
   layer_mark_dirty(s_layer2);
+  layer_mark_dirty(s_layer2_inner);
 }
 
 // ============================================================================
@@ -115,6 +144,7 @@ static void prv_health_handler(HealthEventType event, void *context) {
   if (event == HealthEventMovementUpdate || event == HealthEventSignificantUpdate) {
     s_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
     layer_mark_dirty(s_layer2);
+    layer_mark_dirty(s_layer2_inner);
   }
 }
 
@@ -136,8 +166,13 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_layer2, prv_layer2_update);
   layer_add_child(window_layer, s_layer2);
 
-  // Layer 2 inner: 11/30 of screen, centered
+  // Layer 2 inner: large screens get a wider inner region so big-numeric
+  // fonts (LECO_32) fit; small screens stick with 11/30.
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  GRect layer2_inner_rect = utils_get_centered_rect(bounds, 15, 30);
+#else
   GRect layer2_inner_rect = utils_get_centered_rect(bounds, 11, 30);
+#endif
   s_layer2_inner = layer_create(layer2_inner_rect);
   layer_set_update_proc(s_layer2_inner, prv_layer2_inner_update);
   layer_add_child(window_layer, s_layer2_inner);
@@ -208,6 +243,24 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     strncpy(s_weather_cond, icon_t->value->cstring, sizeof(s_weather_cond) - 1);
     s_weather_cond[sizeof(s_weather_cond) - 1] = '\0';
   }
+  Tuple *order_t = dict_find(received, MESSAGE_KEY_SlotOrder);
+  if (order_t && order_t->type == TUPLE_BYTE_ARRAY &&
+      order_t->length >= SLOT_COUNT) {
+    // Validate: each byte must be a known widget id and the set must be a
+    // permutation of {0..SLOT_COUNT-1}.
+    uint8_t seen[WIDGET_COUNT] = {0};
+    bool ok = true;
+    for (int i = 0; i < SLOT_COUNT; i++) {
+      uint8_t v = order_t->value->data[i];
+      if (v >= WIDGET_COUNT || seen[v]) { ok = false; break; }
+      seen[v] = 1;
+    }
+    if (ok) {
+      memcpy(s_slot_order, order_t->value->data, SLOT_COUNT);
+      persist_write_data(PERSIST_KEY_SLOT_ORDER, s_slot_order, SLOT_COUNT);
+    }
+  }
+  layer_mark_dirty(s_layer2);
   layer_mark_dirty(s_layer2_inner);
 }
 
@@ -215,6 +268,21 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
 // Init / Deinit
 // ============================================================================
 static void prv_init(void) {
+  // Restore persisted slot order if present and valid.
+  if (persist_exists(PERSIST_KEY_SLOT_ORDER)) {
+    uint8_t buf[SLOT_COUNT];
+    int n = persist_read_data(PERSIST_KEY_SLOT_ORDER, buf, SLOT_COUNT);
+    if (n == SLOT_COUNT) {
+      uint8_t seen[WIDGET_COUNT] = {0};
+      bool ok = true;
+      for (int i = 0; i < SLOT_COUNT; i++) {
+        if (buf[i] >= WIDGET_COUNT || seen[buf[i]]) { ok = false; break; }
+        seen[buf[i]] = 1;
+      }
+      if (ok) memcpy(s_slot_order, buf, SLOT_COUNT);
+    }
+  }
+
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
     .load = prv_window_load,
