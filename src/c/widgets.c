@@ -25,22 +25,28 @@ static void prv_render_steps(GContext *ctx, GRect rect, const WidgetState *s) {
     ? gdraw_command_image_get_bounds_size(s->icon_steps)
     : GSize(0, 0);
   int16_t gap = s->icon_steps ? 4 : 0;
-  int16_t text_w = IS_LARGE_SCREEN ? 70 : 50;
   int16_t text_h = SMALL_TEXT_H;
-  int16_t group_w = text_w + gap + icon_size.w;
+  int16_t max_text_w = IS_LARGE_SCREEN ? 70 : 50;
+
+  GFont font = fonts_get_system_font(FONT_SMALL_TEXT);
+  GSize text_size = graphics_text_layout_get_content_size(
+    buf, font,
+    GRect(0, 0, max_text_w, text_h),
+    GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+
+  int16_t group_w = text_size.w + gap + icon_size.w;
   int16_t group_x = rect.origin.x + (rect.size.w - group_w) / 2;
   int16_t center_y = rect.origin.y + rect.size.h / 2;
 
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, buf,
-                     fonts_get_system_font(FONT_SMALL_TEXT),
-                     GRect(group_x, center_y - text_h / 2, text_w, text_h),
+  graphics_draw_text(ctx, buf, font,
+                     GRect(group_x, center_y - text_h / 2, text_size.w, text_h),
                      GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentRight, NULL);
+                     GTextAlignmentLeft, NULL);
 
   if (s->icon_steps) {
     gdraw_command_image_draw(ctx, s->icon_steps,
-      GPoint(group_x + text_w + gap, center_y - icon_size.h / 2));
+      GPoint(group_x + text_size.w + gap, center_y - icon_size.h / 2));
   }
 }
 
