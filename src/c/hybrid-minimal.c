@@ -2,16 +2,15 @@
 #include "utils.h"
 #include "layer1.h"
 #include "layer2.h"
-#include "layer3.h"
 
 // ============================================================================
 // Hybrid Minimal Watchface — Main Entry Point
 // ============================================================================
 
 static Window *s_window;
-static Layer *s_layer1;  // base — full screen
-static Layer *s_layer2;  // middle — 4/6
-static Layer *s_layer3;  // inner — 2/6
+static Layer *s_layer1;        // base — full screen
+static Layer *s_layer2;        // middle — 4/6 (steps + battery)
+static Layer *s_layer2_inner;  // inner — 2/6 (date, time, weather)
 
 // Current time cache
 static struct tm s_current_time;
@@ -86,9 +85,9 @@ static void prv_layer2_update(Layer *layer, GContext *ctx) {
   layer2_update(layer, ctx, s_steps, s_step_goal, s_battery_pct, s_icon_steps);
 }
 
-static void prv_layer3_update(Layer *layer, GContext *ctx) {
-  layer3_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond,
-                prv_get_weather_icon());
+static void prv_layer2_inner_update(Layer *layer, GContext *ctx) {
+  layer2_inner_update(layer, ctx, &s_current_time, s_weather_temp, s_weather_cond,
+                      prv_get_weather_icon());
 }
 
 // ============================================================================
@@ -98,7 +97,7 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   s_current_time = *tick_time;
   layer_mark_dirty(s_layer1);
   layer_mark_dirty(s_layer2);
-  layer_mark_dirty(s_layer3);
+  layer_mark_dirty(s_layer2_inner);
 }
 
 // ============================================================================
@@ -137,11 +136,11 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_layer2, prv_layer2_update);
   layer_add_child(window_layer, s_layer2);
 
-  // Layer 3: 11/30 of screen, centered
-  GRect layer3_rect = utils_get_centered_rect(bounds, 11, 30);
-  s_layer3 = layer_create(layer3_rect);
-  layer_set_update_proc(s_layer3, prv_layer3_update);
-  layer_add_child(window_layer, s_layer3);
+  // Layer 2 inner: 11/30 of screen, centered
+  GRect layer2_inner_rect = utils_get_centered_rect(bounds, 11, 30);
+  s_layer2_inner = layer_create(layer2_inner_rect);
+  layer_set_update_proc(s_layer2_inner, prv_layer2_inner_update);
+  layer_add_child(window_layer, s_layer2_inner);
 
   // Seed initial time
   time_t now = time(NULL);
@@ -191,7 +190,7 @@ static void prv_window_unload(Window *window) {
     gdraw_command_image_destroy(s_weather_icons[i]);
     s_weather_icons[i] = NULL;
   }
-  layer_destroy(s_layer3);
+  layer_destroy(s_layer2_inner);
   layer_destroy(s_layer2);
   layer_destroy(s_layer1);
 }
@@ -209,7 +208,7 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     strncpy(s_weather_cond, icon_t->value->cstring, sizeof(s_weather_cond) - 1);
     s_weather_cond[sizeof(s_weather_cond) - 1] = '\0';
   }
-  layer_mark_dirty(s_layer3);
+  layer_mark_dirty(s_layer2_inner);
 }
 
 // ============================================================================
