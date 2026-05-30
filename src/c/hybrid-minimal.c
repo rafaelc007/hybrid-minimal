@@ -6,6 +6,7 @@
 
 #define PERSIST_KEY_SLOT_ORDER 1
 #define PERSIST_KEY_PROGRESS_COLOR 2
+#define PERSIST_KEY_BAR_STYLE 3
 #define SLOT_COUNT 5
 
 // Refresh weather every 30 minutes from the watch.
@@ -59,6 +60,10 @@ static uint8_t s_progress_color_argb = 0;  // set in prv_init from GColorJazzber
 #else
 static uint8_t s_progress_color_argb = 0;  // set in prv_init from GColorLightGray
 #endif
+
+// Progress bar shape: 0 = rounded square (default), 1 = sharp square.
+// Only affects rectangular displays; round displays always render an arc.
+static uint8_t s_bar_style = 0;
 
 // ============================================================================
 // PDC color helpers (called once at load)
@@ -118,13 +123,13 @@ static WidgetState prv_build_widget_state(void) {
 // ============================================================================
 static void prv_layer1_bg_update(Layer *layer, GContext *ctx) {
   GColor c = (GColor){ .argb = s_progress_color_argb };
-  layer1_bg_update(layer, ctx, s_current_time.tm_min, c);
+  layer1_bg_update(layer, ctx, s_current_time.tm_min, c, s_bar_style == 0);
 }
 
 static void prv_layer1_chrome_update(Layer *layer, GContext *ctx) {
   int h12 = s_current_time.tm_hour % 12;
   if (h12 == 0) h12 = 12;
-  layer1_chrome_update(layer, ctx, h12);
+  layer1_chrome_update(layer, ctx, h12, s_bar_style == 0);
 }
 
 static void prv_layer2_update(Layer *layer, GContext *ctx) {
@@ -335,12 +340,26 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     }
   }
 
+  Tuple *style_t = dict_find(received, MESSAGE_KEY_BarStyle);
+  bool style_changed = false;
+  if (style_t) {
+    uint8_t new_style = (uint8_t)style_t->value->int32 ? 1 : 0;
+    if (new_style != s_bar_style) {
+      s_bar_style = new_style;
+      persist_write_int(PERSIST_KEY_BAR_STYLE, (int32_t)new_style);
+      style_changed = true;
+    }
+  }
+
   if (weather_changed || order_changed) {
     layer_mark_dirty(s_layer2);
     layer_mark_dirty(s_layer2_inner);
   }
-  if (color_changed) {
+  if (color_changed || style_changed) {
     layer_mark_dirty(s_layer1_bg);
+  }
+  if (style_changed) {
+    layer_mark_dirty(s_layer1_chrome);
   }
 }
 
@@ -368,6 +387,10 @@ static void prv_init(void) {
 
   if (persist_exists(PERSIST_KEY_PROGRESS_COLOR)) {
     s_progress_color_argb = (uint8_t)persist_read_int(PERSIST_KEY_PROGRESS_COLOR);
+  }
+
+  if (persist_exists(PERSIST_KEY_BAR_STYLE)) {
+    s_bar_style = (uint8_t)persist_read_int(PERSIST_KEY_BAR_STYLE) ? 1 : 0;
   }
 
   s_window = window_create();

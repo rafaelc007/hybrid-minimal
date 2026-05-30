@@ -88,9 +88,170 @@ static void rect_draw_progress(GContext *ctx, GRect outer, int16_t band,
 #endif // !PBL_ROUND
 
 // ============================================================================
+// Rounded-square perimeter helpers (rectangular screens only)
+// ============================================================================
+#ifndef PBL_ROUND
+
+#define ROUNDED_CORNER_R 14
+
+// πr/2 in pixels using integer math: TRIG_MAX_ANGLE / 4 ≈ 16384; arc length
+// for a quarter circle is (π/2)·r ≈ 1.5708·r ≈ r * 15708 / 10000.
+static inline int arc_quarter_len(int16_t r) {
+  return (r * 15708) / 10000;
+}
+
+// Total perimeter of a rounded rect with given corner radius.
+static int rounded_perim(GRect rect, int16_t r) {
+  if (r <= 0) return 2 * rect.size.w + 2 * rect.size.h;
+  return 2 * (rect.size.w - 2 * r) + 2 * (rect.size.h - 2 * r) + 4 * arc_quarter_len(r);
+}
+
+// Point on a rounded rect perimeter at distance d (clockwise from 12 o'clock).
+static GPoint rounded_perim_point_at_d(GRect rect, int16_t r, int d) {
+  int x = rect.origin.x, y = rect.origin.y;
+  int w = rect.size.w, h = rect.size.h;
+  int hw = w / 2;
+  int aq = arc_quarter_len(r);
+  int s0 = hw - r;          // top-center → TR straight
+  int s1 = aq;              // TR arc
+  int s2 = h - 2 * r;       // right straight
+  int s3 = aq;              // BR arc
+  int s4 = w - 2 * r;       // bottom straight
+  int s5 = aq;              // BL arc
+  int s6 = h - 2 * r;       // left straight
+  int s7 = aq;              // TL arc
+  // s8 = hw - r (top-left straight back to top-center)
+
+  int b = 0;
+  if (d <= (b += s0)) return GPoint(x + hw + d, y);
+  int prev = b;
+  if (d <= (b += s1)) {
+    int32_t a = (int32_t)(TRIG_MAX_ANGLE / 4) * (d - prev) / aq;
+    int cx = x + w - r, cy = y + r;
+    int sx =  sin_lookup(a) * r / TRIG_MAX_RATIO;
+    int sy = -cos_lookup(a) * r / TRIG_MAX_RATIO;
+    return GPoint(cx + sx, cy + sy);
+  }
+  prev = b;
+  if (d <= (b += s2)) return GPoint(x + w, y + r + (d - prev));
+  prev = b;
+  if (d <= (b += s3)) {
+    int32_t a = TRIG_MAX_ANGLE / 4 + (int32_t)(TRIG_MAX_ANGLE / 4) * (d - prev) / aq;
+    int cx = x + w - r, cy = y + h - r;
+    int sx =  sin_lookup(a) * r / TRIG_MAX_RATIO;
+    int sy = -cos_lookup(a) * r / TRIG_MAX_RATIO;
+    return GPoint(cx + sx, cy + sy);
+  }
+  prev = b;
+  if (d <= (b += s4)) return GPoint(x + w - r - (d - prev), y + h);
+  prev = b;
+  if (d <= (b += s5)) {
+    int32_t a = TRIG_MAX_ANGLE / 2 + (int32_t)(TRIG_MAX_ANGLE / 4) * (d - prev) / aq;
+    int cx = x + r, cy = y + h - r;
+    int sx =  sin_lookup(a) * r / TRIG_MAX_RATIO;
+    int sy = -cos_lookup(a) * r / TRIG_MAX_RATIO;
+    return GPoint(cx + sx, cy + sy);
+  }
+  prev = b;
+  if (d <= (b += s6)) return GPoint(x, y + h - r - (d - prev));
+  prev = b;
+  if (d <= (b += s7)) {
+    int32_t a = 3 * TRIG_MAX_ANGLE / 4 + (int32_t)(TRIG_MAX_ANGLE / 4) * (d - prev) / aq;
+    int cx = x + r, cy = y + r;
+    int sx =  sin_lookup(a) * r / TRIG_MAX_RATIO;
+    int sy = -cos_lookup(a) * r / TRIG_MAX_RATIO;
+    return GPoint(cx + sx, cy + sy);
+  }
+  prev = b;
+  // top-left straight back to top-center
+  return GPoint(x + r + (d - prev), y);
+}
+
+// Unified perimeter sampling: rounded when r > 0, sharp rectangle when r == 0.
+static GPoint perim_point_at_tick(GRect rect, int16_t r, int tick, int total_ticks) {
+  if (r <= 0) return rect_perimeter_point(rect, tick, total_ticks);
+  int perim = rounded_perim(rect, r);
+  return rounded_perim_point_at_d(rect, r, tick * perim / total_ticks);
+}
+
+// Draw the band of a rounded-rect from 12 o'clock, clockwise, for `progress/total`.
+static void rounded_draw_progress(GContext *ctx, GRect outer, int16_t r,
+                                   int16_t band, int progress, int total) {
+  int x = outer.origin.x, y = outer.origin.y;
+  int w = outer.size.w, h = outer.size.h;
+  int hw = w / 2;
+  int aq = arc_quarter_len(r);
+  int seg[9] = {
+    hw - r, aq, h - 2 * r, aq, w - 2 * r, aq, h - 2 * r, aq, hw - r
+  };
+  int perim = 0;
+  for (int i = 0; i < 9; i++) perim += seg[i];
+  int remaining = progress * perim / total;
+
+  for (int i = 0; i < 9 && remaining > 0; i++) {
+    int slen = seg[i];
+    int flen = (remaining > slen) ? slen : remaining;
+    remaining -= flen;
+    if (flen <= 0) continue;
+
+    switch (i) {
+      case 0:
+        graphics_fill_rect(ctx, GRect(x + hw, y, flen, band), 0, GCornerNone);
+        break;
+      case 1: {
+        int cx = x + w - r, cy = y + r;
+        int32_t a_end = (int32_t)(TRIG_MAX_ANGLE / 4) * flen / aq;
+        graphics_fill_radial(ctx, GRect(cx - r, cy - r, 2 * r, 2 * r),
+                             GOvalScaleModeFitCircle, band, 0, a_end);
+        break;
+      }
+      case 2:
+        graphics_fill_rect(ctx, GRect(x + w - band, y + r, band, flen), 0, GCornerNone);
+        break;
+      case 3: {
+        int cx = x + w - r, cy = y + h - r;
+        int32_t a_end = TRIG_MAX_ANGLE / 4 + (int32_t)(TRIG_MAX_ANGLE / 4) * flen / aq;
+        graphics_fill_radial(ctx, GRect(cx - r, cy - r, 2 * r, 2 * r),
+                             GOvalScaleModeFitCircle, band,
+                             TRIG_MAX_ANGLE / 4, a_end);
+        break;
+      }
+      case 4:
+        graphics_fill_rect(ctx, GRect(x + w - r - flen, y + h - band, flen, band), 0, GCornerNone);
+        break;
+      case 5: {
+        int cx = x + r, cy = y + h - r;
+        int32_t a_end = TRIG_MAX_ANGLE / 2 + (int32_t)(TRIG_MAX_ANGLE / 4) * flen / aq;
+        graphics_fill_radial(ctx, GRect(cx - r, cy - r, 2 * r, 2 * r),
+                             GOvalScaleModeFitCircle, band,
+                             TRIG_MAX_ANGLE / 2, a_end);
+        break;
+      }
+      case 6:
+        graphics_fill_rect(ctx, GRect(x, y + h - r - flen, band, flen), 0, GCornerNone);
+        break;
+      case 7: {
+        int cx = x + r, cy = y + r;
+        int32_t a_end = 3 * TRIG_MAX_ANGLE / 4 + (int32_t)(TRIG_MAX_ANGLE / 4) * flen / aq;
+        graphics_fill_radial(ctx, GRect(cx - r, cy - r, 2 * r, 2 * r),
+                             GOvalScaleModeFitCircle, band,
+                             3 * TRIG_MAX_ANGLE / 4, a_end);
+        break;
+      }
+      case 8:
+        graphics_fill_rect(ctx, GRect(x + r, y, flen, band), 0, GCornerNone);
+        break;
+    }
+  }
+}
+
+#endif // !PBL_ROUND
+
+// ============================================================================
 // Background + minute progress band (repainted every minute)
 // ============================================================================
-void layer1_bg_update(Layer *layer, GContext *ctx, int minute, GColor progress_color) {
+void layer1_bg_update(Layer *layer, GContext *ctx, int minute,
+                      GColor progress_color, bool rounded) {
   GRect bounds = layer_get_bounds(layer);
 
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -99,6 +260,7 @@ void layer1_bg_update(Layer *layer, GContext *ctx, int minute, GColor progress_c
   if (minute <= 0) return;
 
 #ifdef PBL_ROUND
+  (void)rounded;
   {
     int32_t progress_angle = (int32_t)(minute * TRIG_MAX_ANGLE / 60);
     int16_t outer_inset = 2;
@@ -116,7 +278,11 @@ void layer1_bg_update(Layer *layer, GContext *ctx, int minute, GColor progress_c
     GRect prog_rect = grect_inset(bounds, GEdgeInsets(outer_inset));
 
     graphics_context_set_fill_color(ctx, progress_color);
-    rect_draw_progress(ctx, prog_rect, band, minute, 60);
+    if (rounded) {
+      rounded_draw_progress(ctx, prog_rect, ROUNDED_CORNER_R, band, minute, 60);
+    } else {
+      rect_draw_progress(ctx, prog_rect, band, minute, 60);
+    }
   }
 #endif
 }
@@ -124,11 +290,13 @@ void layer1_bg_update(Layer *layer, GContext *ctx, int minute, GColor progress_c
 // ============================================================================
 // Static chrome: tick marks + hour numbers (repainted once per hour)
 // ============================================================================
-void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12) {
+void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12,
+                          bool rounded) {
   GRect bounds = layer_get_bounds(layer);
   int16_t tick_outer_inset = 2;
 
 #ifdef PBL_ROUND
+  (void)rounded;
   {
     int16_t tick_inner_minute = 8;
     int16_t tick_inner_hour   = 14;
@@ -153,14 +321,17 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12) {
     int16_t tick_inner_minute = 7;
     int16_t tick_inner_hour   = 12;
     GRect outer_rect = grect_inset(bounds, GEdgeInsets(tick_outer_inset));
+    int16_t r_outer = rounded ? ROUNDED_CORNER_R : 0;
 
     for (int i = 0; i < 60; i++) {
       bool is_hour = (i % 5 == 0);
       int16_t inner_inset = is_hour ? tick_inner_hour : tick_inner_minute;
       GRect inner_rect = grect_inset(bounds, GEdgeInsets(inner_inset));
+      int16_t r_inner = rounded ? (ROUNDED_CORNER_R - (inner_inset - tick_outer_inset)) : 0;
+      if (r_inner < 0) r_inner = 0;
 
-      GPoint p_outer = rect_perimeter_point(outer_rect, i, 60);
-      GPoint p_inner = rect_perimeter_point(inner_rect, i, 60);
+      GPoint p_outer = perim_point_at_tick(outer_rect, r_outer, i, 60);
+      GPoint p_inner = perim_point_at_tick(inner_rect, r_inner, i, 60);
 
       graphics_context_set_stroke_width(ctx, is_hour ? 3 : 1);
       graphics_context_set_stroke_color(ctx, GColorWhite);
@@ -194,12 +365,14 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12) {
   {
     int16_t number_inset = 24;
     GRect number_rect = grect_inset(bounds, GEdgeInsets(number_inset));
+    int16_t r_num = rounded ? (ROUNDED_CORNER_R - (number_inset - tick_outer_inset)) : 0;
+    if (r_num < 0) r_num = 0;
 
     char hour_str[3];
     for (int h = 1; h <= 12; h++) {
       int tick = h * 5;
       if (tick >= 60) tick -= 60;
-      GPoint pos = rect_perimeter_point(number_rect, tick, 60);
+      GPoint pos = perim_point_at_tick(number_rect, r_num, tick, 60);
 
       bool is_current = (h == current_hour12);
 #ifdef PBL_COLOR

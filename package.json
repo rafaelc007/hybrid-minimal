@@ -30,7 +30,8 @@
       "VibrateOnDisconnect",
       "SlotOrder",
       "RequestWeather",
-      "ProgressColor"
+      "ProgressColor",
+      "BarStyle"
     ],
     "resources": {
       "media": [

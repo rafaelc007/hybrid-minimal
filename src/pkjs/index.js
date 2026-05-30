@@ -22,6 +22,9 @@ var COLORS = [
 ];
 var DEFAULT_COLOR_ARGB = 0xE1; // Jazzberry
 
+// Progress bar shape: 0 = rounded square (default), 1 = sharp square.
+var DEFAULT_BAR_STYLE = 0;
+
 // ----------------------------------------------------------------------------
 // Weather (Open-Meteo)
 // ----------------------------------------------------------------------------
@@ -96,11 +99,19 @@ function getSavedColor() {
   return isNaN(n) ? DEFAULT_COLOR_ARGB : (n & 0xFF);
 }
 
+function getSavedBarStyle() {
+  var raw = localStorage.getItem('barStyle');
+  if (raw === null) return DEFAULT_BAR_STYLE;
+  var n = parseInt(raw, 10);
+  return (n === 1) ? 1 : 0;
+}
+
 function buildConfigHtml(order) {
   var labelsJson = JSON.stringify(WIDGETS);
   var orderJson  = JSON.stringify(order);
   var colorsJson = JSON.stringify(COLORS);
   var selectedColor = getSavedColor();
+  var selectedStyle = getSavedBarStyle();
   return '<!doctype html>' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -118,6 +129,9 @@ function buildConfigHtml(order) {
 '.swatches{display:flex;flex-wrap:wrap;gap:8px}' +
 '.sw{width:40px;height:40px;border-radius:50%;border:3px solid #222;cursor:pointer;box-sizing:border-box}' +
 '.sw.sel{border-color:#fff}' +
+'.styles{display:flex;gap:8px}' +
+'.style{flex:1;background:#333;color:#eee;border:2px solid #333;border-radius:6px;padding:12px;text-align:center;font-size:14px;cursor:pointer}' +
+'.style.sel{border-color:#0a84ff;background:#1c3a5c}' +
 '.save{display:block;width:100%;background:#0a84ff;border:0;color:#fff;padding:14px;font-size:16px;border-radius:8px;margin-top:24px}' +
 '</style></head><body>' +
 '<h1>Widget Order</h1>' +
@@ -128,12 +142,18 @@ function buildConfigHtml(order) {
 '<ul id="inner"></ul>' +
 '<div class="zone">Progress bar color</div>' +
 '<div class="swatches" id="sw"></div>' +
+'<div class="zone">Progress bar shape</div>' +
+'<div class="styles">' +
+'<div class="style" id="st0" data-v="0">Rounded</div>' +
+'<div class="style" id="st1" data-v="1">Square</div>' +
+'</div>' +
 '<button class="save" id="save">Save</button>' +
 '<script>' +
 'var labels=' + labelsJson + ';' +
 'var order=' + orderJson + ';' +
 'var colors=' + colorsJson + ';' +
 'var selColor=' + selectedColor + ';' +
+'var selStyle=' + selectedStyle + ';' +
 'function render(){' +
 '  var outer=document.getElementById("outer");' +
 '  var inner=document.getElementById("inner");' +
@@ -159,10 +179,15 @@ function buildConfigHtml(order) {
 '    d.onclick=function(){selColor=c.argb;render();};' +
 '    sw.appendChild(d);' +
 '  });' +
+'  [0,1].forEach(function(v){' +
+'    var el=document.getElementById("st"+v);' +
+'    el.className="style"+(v===selStyle?" sel":"");' +
+'    el.onclick=function(){selStyle=v;render();};' +
+'  });' +
 '}' +
 'render();' +
 'document.getElementById("save").onclick=function(){' +
-'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor}));' +
+'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor,style:selStyle}));' +
 '  document.location="pebblejs://close#"+payload;' +
 '};' +
 '</script></body></html>';
@@ -187,6 +212,10 @@ Pebble.addEventListener('webviewclosed', function(e) {
       var argb = cfg.color & 0xFF;
       localStorage.setItem('progressColor', String(argb));
       msg.ProgressColor = argb;
+    }
+    if (cfg && (cfg.style === 0 || cfg.style === 1)) {
+      localStorage.setItem('barStyle', String(cfg.style));
+      msg.BarStyle = cfg.style;
     }
     if (Object.keys(msg).length) {
       Pebble.sendAppMessage(msg,

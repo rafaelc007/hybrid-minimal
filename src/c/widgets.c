@@ -59,8 +59,8 @@ static void prv_render_battery(GContext *ctx, GRect rect, const WidgetState *s) 
   int16_t body_h = fill_h + 2 * (border + pad);
   int16_t nub_w  = 3;
   int16_t nub_h  = fill_h;
-#ifdef PBL_PLATFORM_EMERY
-  // Emery: shrink overall battery length by 20%.
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  // Large-screen platforms: shrink overall battery length by 20%.
   int16_t body_w = rect.size.w * 4 / 6 * 4 / 5;
 #else
   int16_t body_w = rect.size.w * 4 / 6;
