@@ -92,7 +92,7 @@ static void rect_draw_progress(GContext *ctx, GRect outer, int16_t band,
 // ============================================================================
 #ifndef PBL_ROUND
 
-#define ROUNDED_CORNER_R 14
+#define ROUNDED_CORNER_R 18
 
 // πr/2 in pixels using integer math: TRIG_MAX_ANGLE / 4 ≈ 16384; arc length
 // for a quarter circle is (π/2)·r ≈ 1.5708·r ≈ r * 15708 / 10000.
