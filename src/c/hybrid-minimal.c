@@ -33,6 +33,9 @@ static char s_weather_cond[16] = "";
 
 // Cached PDC images
 static GDrawCommandImage *s_icon_steps = NULL;
+static GDrawCommandImage *s_icon_disconnect = NULL;
+
+static bool s_connected = true;
 
 #define NUM_WEATHER_ICONS 7
 typedef enum {
@@ -113,8 +116,10 @@ static WidgetState prv_build_widget_state(void) {
     .current_time = &s_current_time,
     .weather_temp = s_weather_temp,
     .weather_cond = s_weather_cond,
-    .icon_steps   = s_icon_steps,
-    .icon_weather = s_resolved_weather_icon,
+    .icon_steps      = s_icon_steps,
+    .icon_weather    = s_resolved_weather_icon,
+    .icon_disconnect = s_icon_disconnect,
+    .connected       = s_connected,
   };
 }
 
@@ -197,6 +202,16 @@ static void prv_battery_handler(BatteryChargeState charge) {
 }
 
 // ============================================================================
+// Connection service — swap the weather widget for a disconnect icon when
+// the phone link drops.
+// ============================================================================
+static void prv_connection_handler(bool connected) {
+  if (connected == s_connected) return;
+  s_connected = connected;
+  layer_mark_dirty(s_layer2_inner);
+}
+
+// ============================================================================
 // Window load / unload
 // ============================================================================
 static void prv_window_load(Window *window) {
@@ -248,6 +263,13 @@ static void prv_window_load(Window *window) {
       prv_recolor_black_to, &green);
   }
 
+  s_icon_disconnect = gdraw_command_image_create_with_resource(RESOURCE_ID_ICON_DISCONNECT);
+  if (s_icon_disconnect) {
+    gdraw_command_list_iterate(
+      gdraw_command_image_get_command_list(s_icon_disconnect),
+      prv_invert_cmd, NULL);
+  }
+
   // Pre-scaled weather icons (sized per platform via package.json). Invert
   // black<->white once at load.
   static const uint32_t s_weather_res_ids[NUM_WEATHER_ICONS] = {
@@ -272,6 +294,8 @@ static void prv_window_load(Window *window) {
 static void prv_window_unload(Window *window) {
   gdraw_command_image_destroy(s_icon_steps);
   s_icon_steps = NULL;
+  gdraw_command_image_destroy(s_icon_disconnect);
+  s_icon_disconnect = NULL;
   for (int i = 0; i < NUM_WEATHER_ICONS; i++) {
     gdraw_command_image_destroy(s_weather_icons[i]);
     s_weather_icons[i] = NULL;
@@ -408,6 +432,11 @@ static void prv_init(void) {
 
   tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
   battery_state_service_subscribe(prv_battery_handler);
+
+  s_connected = connection_service_peek_pebble_app_connection();
+  connection_service_subscribe((ConnectionHandlers){
+    .pebble_app_connection_handler = prv_connection_handler,
+  });
 }
 
 static void prv_deinit(void) {

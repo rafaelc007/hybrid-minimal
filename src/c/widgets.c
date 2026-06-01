@@ -125,6 +125,14 @@ static void prv_render_date(GContext *ctx, GRect rect, const WidgetState *s) {
 }
 
 static void prv_render_weather(GContext *ctx, GRect rect, const WidgetState *s) {
+  if (!s->connected && s->icon_disconnect) {
+    GSize icon_size = gdraw_command_image_get_bounds_size(s->icon_disconnect);
+    int16_t icon_x = rect.origin.x + (rect.size.w - icon_size.w) / 2;
+    int16_t icon_y = rect.origin.y + (rect.size.h - icon_size.h) / 2;
+    gdraw_command_image_draw(ctx, s->icon_disconnect, GPoint(icon_x, icon_y));
+    return;
+  }
+
   char buf[12];
   if (s->weather_temp == -999) {
     snprintf(buf, sizeof(buf), "--");

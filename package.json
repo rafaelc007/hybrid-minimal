@@ -123,6 +123,18 @@
           "name": "WEATHER_HEAVY_SNOW",
           "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
           "file": "images/Pebble_50x50_Heavy_snow_small.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_DISCONNECT",
+          "targetPlatforms": ["emery", "gabbro"],
+          "file": "images/disconnect.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_DISCONNECT",
+          "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+          "file": "images/disconnect_small.pdc"
         }
       ]
     }

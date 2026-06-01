@@ -19,6 +19,8 @@ typedef struct {
   const char *weather_cond;
   GDrawCommandImage *icon_steps;
   GDrawCommandImage *icon_weather;
+  GDrawCommandImage *icon_disconnect;
+  bool connected;
 } WidgetState;
 
 // Render the widget identified by `id` into `rect` using `state`.
