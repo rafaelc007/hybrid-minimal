@@ -342,7 +342,20 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12,
 
 #ifdef PBL_ROUND
   {
+#ifdef PBL_PLATFORM_CHALK
+    // Chalk: pull numbers close to the inner end of the hour ticks
+    // (hour ticks extend to inset 14; place number centers at inset ~24).
+    int16_t number_inset = 24;
+    const char *hour_font_key = FONT_KEY_GOTHIC_18_BOLD;
+    int16_t box_w = 24, box_h = 18;
+    int16_t box_yoff = -(box_h / 2) - 5;
+#else
     int16_t number_inset = 28;
+    const char *hour_font_key = FONT_KEY_LECO_20_BOLD_NUMBERS;
+    int16_t box_w = 28, box_h = 20;
+    // LECO_20 has ~8px of empty space above the digit cap in its box.
+    int16_t box_yoff = -(box_h / 2) - 6;
+#endif
     GRect number_rect = grect_inset(bounds, GEdgeInsets(number_inset));
 
     char hour_str[3];
@@ -354,9 +367,9 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12,
       graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
-      GRect text_box = GRect(pos.x - 14, pos.y - 9, 28, 20);
+      GRect text_box = GRect(pos.x - box_w / 2, pos.y + box_yoff, box_w, box_h);
       graphics_draw_text(ctx, hour_str,
-                         fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS),
+                         fonts_get_system_font(hour_font_key),
                          text_box, GTextOverflowModeTrailingEllipsis,
                          GTextAlignmentCenter, NULL);
     }
@@ -380,14 +393,17 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12,
 #else
       if (is_current) {
         graphics_context_set_stroke_color(ctx, GColorWhite);
-        graphics_draw_rect(ctx, GRect(pos.x - 13, pos.y - 8, 23, 20));
+        graphics_draw_rect(ctx, GRect(pos.x - 12, pos.y - 14, 24, 20));
       }
       (void)is_current;
       graphics_context_set_text_color(ctx, GColorWhite);
 #endif
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
-      GRect text_box = GRect(pos.x - 12, pos.y - 10, 24, 20);
+      // LECO_20 has ~6–7px padding above the digit cap inside its box;
+      // shift up so the glyph centers on pos.y.
+      int16_t box_w = 24, box_h = 20;
+      GRect text_box = GRect(pos.x - box_w / 2, pos.y - box_h / 2 - 6, box_w, box_h);
       graphics_draw_text(ctx, hour_str,
                          fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS),
                          text_box, GTextOverflowModeTrailingEllipsis,

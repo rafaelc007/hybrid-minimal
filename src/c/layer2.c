@@ -36,9 +36,9 @@ static void prv_render_stack(GContext *ctx, GRect bounds, int start, int n,
 }
 
 // ============================================================================
-// Outer region: 2 slots — one strip above the inner region, one below.
-// The inner layer (11/30 of screen) is centered inside this outer layer
-// (19/30). To avoid overlap we render only in the top and bottom margins.
+// Outer region: 2 slots — slot_order[0] is the top strip, slot_order[4] is
+// the bottom strip. The inner layer (slot_order[1..3]) is centered inside
+// this outer layer.
 // ============================================================================
 void layer2_update(Layer *layer, GContext *ctx,
                    const uint8_t *slot_order, const WidgetState *state) {
@@ -66,17 +66,17 @@ void layer2_update(Layer *layer, GContext *ctx,
     widget_render(ctx, top_strip, (WidgetId)slot_order[0], state);
   }
   if (bot_strip.size.h > 0) {
-    widget_render(ctx, bot_strip, (WidgetId)slot_order[1], state);
+    widget_render(ctx, bot_strip, (WidgetId)slot_order[4], state);
   }
 }
 
 // ============================================================================
-// Inner region: 3 slots stacked vertically
+// Inner region: 3 slots stacked vertically — slot_order[1..3]
 // ============================================================================
 void layer2_inner_update(Layer *layer, GContext *ctx,
                          const uint8_t *slot_order, const WidgetState *state) {
   GRect bounds = layer_get_bounds(layer);
   int16_t pad = 2;
   GRect inset = GRect(pad, pad, bounds.size.w - 2 * pad, bounds.size.h - 2 * pad);
-  prv_render_stack(ctx, inset, 2, 3, slot_order, state);
+  prv_render_stack(ctx, inset, 1, 3, slot_order, state);
 }

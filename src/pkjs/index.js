@@ -4,7 +4,8 @@
 
 // Widget IDs — must mirror src/c/widgets.h
 var WIDGETS = ['Steps', 'Battery', 'Time', 'Date', 'Weather'];
-var DEFAULT_ORDER = [0, 1, 2, 3, 4];
+// Default visual order, top → bottom on the watchface.
+var DEFAULT_ORDER = [0, 2, 3, 4, 1];
 
 // Progress band color palette — values are Pebble GColor8 ARGB8 bytes.
 var COLORS = [
@@ -83,7 +84,7 @@ function fetchWeather() {
 // Settings page
 // ----------------------------------------------------------------------------
 function getSavedOrder() {
-  var raw = localStorage.getItem('slotOrder');
+  var raw = localStorage.getItem('slotOrderV2');
   if (!raw) return DEFAULT_ORDER.slice();
   try {
     var arr = JSON.parse(raw);
@@ -202,7 +203,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
     var cfg = JSON.parse(decodeURIComponent(e.response));
     var msg = {};
     if (cfg && Array.isArray(cfg.order) && cfg.order.length === WIDGETS.length) {
-      localStorage.setItem('slotOrder', JSON.stringify(cfg.order));
+      localStorage.setItem('slotOrderV2', JSON.stringify(cfg.order));
       msg.SlotOrder = cfg.order;
     }
     if (cfg && typeof cfg.color === 'number') {

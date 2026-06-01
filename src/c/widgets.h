@@ -21,6 +21,11 @@ typedef struct {
   GDrawCommandImage *icon_weather;
   GDrawCommandImage *icon_disconnect;
   bool connected;
+  bool is_24h;
+  // Pre-measured icon sizes (avoid gdraw_command_image_get_bounds_size per draw).
+  GSize icon_steps_size;
+  GSize icon_weather_size;
+  GSize icon_disconnect_size;
 } WidgetState;
 
 // Render the widget identified by `id` into `rect` using `state`.

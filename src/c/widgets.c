@@ -18,12 +18,22 @@
 // ============================================================================
 
 static void prv_render_steps(GContext *ctx, GRect rect, const WidgetState *s) {
+  // Manual itoa: avoid snprintf format-parser overhead on every redraw.
   char buf[12];
-  snprintf(buf, sizeof(buf), "%lu", (unsigned long)s->steps);
+  uint32_t n = s->steps;
+  int len;
+  if (n == 0) {
+    buf[0] = '0'; buf[1] = '\0'; len = 1;
+  } else {
+    char tmp[12];
+    int t = 0;
+    while (n > 0 && t < 11) { tmp[t++] = '0' + (n % 10); n /= 10; }
+    len = t;
+    for (int i = 0; i < t; i++) buf[i] = tmp[t - 1 - i];
+    buf[len] = '\0';
+  }
 
-  GSize icon_size = s->icon_steps
-    ? gdraw_command_image_get_bounds_size(s->icon_steps)
-    : GSize(0, 0);
+  GSize icon_size = s->icon_steps ? s->icon_steps_size : GSize(0, 0);
   int16_t gap = s->icon_steps ? 4 : 0;
   int16_t text_h = SMALL_TEXT_H;
   int16_t max_text_w = IS_LARGE_SCREEN ? 70 : 50;
@@ -55,12 +65,19 @@ static void prv_render_battery(GContext *ctx, GRect rect, const WidgetState *s) 
 
   int16_t border = 1;
   int16_t pad    = 1;
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
   int16_t fill_h = 6;
+#else
+  // Small screens: ~2px thinner.
+  int16_t fill_h = 4;
+#endif
   int16_t body_h = fill_h + 2 * (border + pad);
   int16_t nub_w  = 3;
   int16_t nub_h  = fill_h;
-#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
-  // Large-screen platforms: shrink overall battery length by 20%.
+#if defined(PBL_ROUND)
+  // Round platforms (chalk, gabbro): 20% shorter than emery.
+  int16_t body_w = rect.size.w * 4 / 6 * 4 / 5 * 4 / 5;
+#elif defined(PBL_PLATFORM_EMERY)
   int16_t body_w = rect.size.w * 4 / 6 * 4 / 5;
 #else
   int16_t body_w = rect.size.w * 4 / 6;
@@ -92,7 +109,7 @@ static void prv_render_battery(GContext *ctx, GRect rect, const WidgetState *s) 
 static void prv_render_time(GContext *ctx, GRect rect, const WidgetState *s) {
   char buf[8];
   strftime(buf, sizeof(buf),
-           clock_is_24h_style() ? "%H:%M" : "%I:%M", s->current_time);
+           s->is_24h ? "%H:%M" : "%I:%M", s->current_time);
 
 #if IS_LARGE_SCREEN
   GFont font = fonts_get_system_font(FONT_TIME_LARGE);
@@ -126,7 +143,7 @@ static void prv_render_date(GContext *ctx, GRect rect, const WidgetState *s) {
 
 static void prv_render_weather(GContext *ctx, GRect rect, const WidgetState *s) {
   if (!s->connected && s->icon_disconnect) {
-    GSize icon_size = gdraw_command_image_get_bounds_size(s->icon_disconnect);
+    GSize icon_size = s->icon_disconnect_size;
     int16_t icon_x = rect.origin.x + (rect.size.w - icon_size.w) / 2;
     int16_t icon_y = rect.origin.y + (rect.size.h - icon_size.h) / 2;
     gdraw_command_image_draw(ctx, s->icon_disconnect, GPoint(icon_x, icon_y));
@@ -143,7 +160,7 @@ static void prv_render_weather(GContext *ctx, GRect rect, const WidgetState *s) 
   graphics_context_set_text_color(ctx, GColorWhite);
 
   if (s->icon_weather) {
-    GSize icon_size = gdraw_command_image_get_bounds_size(s->icon_weather);
+    GSize icon_size = s->icon_weather_size;
     int16_t gap = 3;
     int16_t text_w = IS_LARGE_SCREEN ? 56 : 40;
     int16_t group_w = icon_size.w + gap + text_w;

@@ -4,13 +4,15 @@
 #include "layer2.h"
 #include "widgets.h"
 
-#define PERSIST_KEY_SLOT_ORDER 1
+#define PERSIST_KEY_SLOT_ORDER 4
 #define PERSIST_KEY_PROGRESS_COLOR 2
 #define PERSIST_KEY_BAR_STYLE 3
 #define SLOT_COUNT 5
 
 // Refresh weather every 30 minutes from the watch.
 #define WEATHER_REFRESH_MINUTES 30
+// Refresh steps once every N minutes (health service polling is not free).
+#define STEPS_REFRESH_MINUTES 5
 
 // ============================================================================
 // State
@@ -34,8 +36,11 @@ static char s_weather_cond[16] = "";
 // Cached PDC images
 static GDrawCommandImage *s_icon_steps = NULL;
 static GDrawCommandImage *s_icon_disconnect = NULL;
+static GSize s_icon_steps_size      = {0, 0};
+static GSize s_icon_disconnect_size = {0, 0};
 
 static bool s_connected = true;
+static bool s_is_24h = false;
 
 #define NUM_WEATHER_ICONS 7
 typedef enum {
@@ -48,13 +53,18 @@ typedef enum {
   WEATHER_IDX_HEAVY_SNOW,
 } WeatherIconIndex;
 static GDrawCommandImage *s_weather_icons[NUM_WEATHER_ICONS];
+static GSize s_weather_icon_sizes[NUM_WEATHER_ICONS];
 
 // Resolved weather icon, computed only when WeatherIcon changes (not per redraw).
 static GDrawCommandImage *s_resolved_weather_icon = NULL;
+static GSize s_resolved_weather_icon_size = {0, 0};
 
-// Default order: outer = steps, battery; inner = time, date, weather
+// Slot order is the visual stack, top → bottom:
+//   [0] outer top strip
+//   [1..3] inner stack (top, middle, bottom)
+//   [4] outer bottom strip
 static uint8_t s_slot_order[SLOT_COUNT] = {
-  WIDGET_STEPS, WIDGET_BATTERY, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER
+  WIDGET_STEPS, WIDGET_TIME, WIDGET_DATE, WIDGET_WEATHER, WIDGET_BATTERY
 };
 
 // Progress band color (GColor8.argb). Defaults differ per display.
@@ -93,34 +103,49 @@ static bool prv_invert_cmd(GDrawCommand *cmd, uint32_t idx, void *context) {
 // ============================================================================
 // Weather icon resolution — done once on receipt, then cached.
 // ============================================================================
-static GDrawCommandImage *prv_resolve_weather_icon(void) {
+static int prv_resolve_weather_icon_index(void) {
   const char *c = s_weather_cond;
-  if (s_weather_temp == -999 || !c || c[0] == '\0') return NULL;
-  if (strstr(c, "sun")     || strstr(c, "clear"))    return s_weather_icons[WEATHER_IDX_CLEAR];
-  if (strstr(c, "cloud")   || strstr(c, "overcast")) return s_weather_icons[WEATHER_IDX_PARTLY_CLOUDY];
-  if (strstr(c, "drizzle"))                          return s_weather_icons[WEATHER_IDX_LIGHT_RAIN];
-  if (strstr(c, "rain")    || strstr(c, "thunder"))  return s_weather_icons[WEATHER_IDX_HEAVY_RAIN];
-  if (strstr(c, "sleet"))                            return s_weather_icons[WEATHER_IDX_LIGHT_SNOW];
-  if (strstr(c, "snow"))                             return s_weather_icons[WEATHER_IDX_HEAVY_SNOW];
-  return s_weather_icons[WEATHER_IDX_GENERIC];
+  if (s_weather_temp == -999 || !c || c[0] == '\0') return -1;
+  if (strstr(c, "sun")     || strstr(c, "clear"))    return WEATHER_IDX_CLEAR;
+  if (strstr(c, "cloud")   || strstr(c, "overcast")) return WEATHER_IDX_PARTLY_CLOUDY;
+  if (strstr(c, "drizzle"))                          return WEATHER_IDX_LIGHT_RAIN;
+  if (strstr(c, "rain")    || strstr(c, "thunder"))  return WEATHER_IDX_HEAVY_RAIN;
+  if (strstr(c, "sleet"))                            return WEATHER_IDX_LIGHT_SNOW;
+  if (strstr(c, "snow"))                             return WEATHER_IDX_HEAVY_SNOW;
+  return WEATHER_IDX_GENERIC;
+}
+
+static void prv_refresh_resolved_weather_icon(void) {
+  int idx = prv_resolve_weather_icon_index();
+  if (idx < 0) {
+    s_resolved_weather_icon = NULL;
+    s_resolved_weather_icon_size = GSize(0, 0);
+  } else {
+    s_resolved_weather_icon = s_weather_icons[idx];
+    s_resolved_weather_icon_size = s_weather_icon_sizes[idx];
+  }
 }
 
 // ============================================================================
-// Shared WidgetState builder (icon already resolved → no per-redraw strstr).
+// Shared WidgetState — single instance, refreshed by event handlers only.
 // ============================================================================
-static WidgetState prv_build_widget_state(void) {
-  return (WidgetState){
-    .steps        = s_steps,
-    .step_goal    = s_step_goal,
-    .battery_pct  = s_battery_pct,
-    .current_time = &s_current_time,
-    .weather_temp = s_weather_temp,
-    .weather_cond = s_weather_cond,
-    .icon_steps      = s_icon_steps,
-    .icon_weather    = s_resolved_weather_icon,
-    .icon_disconnect = s_icon_disconnect,
-    .connected       = s_connected,
-  };
+static WidgetState s_state;
+
+static void prv_refresh_widget_state(void) {
+  s_state.steps                = s_steps;
+  s_state.step_goal            = s_step_goal;
+  s_state.battery_pct          = s_battery_pct;
+  s_state.current_time         = &s_current_time;
+  s_state.weather_temp         = s_weather_temp;
+  s_state.weather_cond         = s_weather_cond;
+  s_state.icon_steps           = s_icon_steps;
+  s_state.icon_weather         = s_resolved_weather_icon;
+  s_state.icon_disconnect      = s_icon_disconnect;
+  s_state.connected            = s_connected;
+  s_state.is_24h               = s_is_24h;
+  s_state.icon_steps_size      = s_icon_steps_size;
+  s_state.icon_weather_size    = s_resolved_weather_icon_size;
+  s_state.icon_disconnect_size = s_icon_disconnect_size;
 }
 
 // ============================================================================
@@ -138,13 +163,11 @@ static void prv_layer1_chrome_update(Layer *layer, GContext *ctx) {
 }
 
 static void prv_layer2_update(Layer *layer, GContext *ctx) {
-  WidgetState st = prv_build_widget_state();
-  layer2_update(layer, ctx, s_slot_order, &st);
+  layer2_update(layer, ctx, s_slot_order, &s_state);
 }
 
 static void prv_layer2_inner_update(Layer *layer, GContext *ctx) {
-  WidgetState st = prv_build_widget_state();
-  layer2_inner_update(layer, ctx, s_slot_order, &st);
+  layer2_inner_update(layer, ctx, s_slot_order, &s_state);
 }
 
 // ============================================================================
@@ -176,18 +199,30 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   }
 
   // Time/date display lives in the inner stack — redraw every minute.
+  // Refresh the cached 24h flag in case the user toggled the system setting
+  // while the watchface is running.
+  bool now_24h = clock_is_24h_style();
+  if (now_24h != s_is_24h) {
+    s_is_24h = now_24h;
+    s_state.is_24h = now_24h;
+  }
   layer_mark_dirty(s_layer2_inner);
 
-  // Refresh step count from health service once per minute (cheaper than
-  // subscribing to movement events that fire many times per minute).
-  uint32_t new_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
-  if (new_steps != s_steps) {
-    s_steps = new_steps;
-    layer_mark_dirty(s_layer2);  // steps live in the outer strips
+  // Steps poll throttled: health_service_sum_today isn't free; querying every
+  // minute wakes the health subsystem 1440 times/day. Polling every 5 min
+  // gives the same perceived freshness with 5× fewer queries.
+  if ((tick_time->tm_min % STEPS_REFRESH_MINUTES) == 0) {
+    uint32_t new_steps = (uint32_t)health_service_sum_today(HealthMetricStepCount);
+    if (new_steps != s_steps) {
+      s_steps = new_steps;
+      s_state.steps = new_steps;
+      layer_mark_dirty(s_layer2);  // steps live in the outer strips
+    }
   }
 
-  // Periodic weather refresh.
-  if ((tick_time->tm_min % WEATHER_REFRESH_MINUTES) == 0) {
+  // Periodic weather refresh (skip if we know we're disconnected — the outbox
+  // would just fail and burn cycles on the BT stack).
+  if (s_connected && (tick_time->tm_min % WEATHER_REFRESH_MINUTES) == 0) {
     prv_request_weather();
   }
 }
@@ -198,6 +233,7 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 static void prv_battery_handler(BatteryChargeState charge) {
   if (charge.charge_percent == s_battery_pct) return;
   s_battery_pct = charge.charge_percent;
+  s_state.battery_pct = s_battery_pct;
   layer_mark_dirty(s_layer2);  // battery lives in the outer strips
 }
 
@@ -208,6 +244,7 @@ static void prv_battery_handler(BatteryChargeState charge) {
 static void prv_connection_handler(bool connected) {
   if (connected == s_connected) return;
   s_connected = connected;
+  s_state.connected = connected;
   layer_mark_dirty(s_layer2_inner);
 }
 
@@ -261,6 +298,7 @@ static void prv_window_load(Window *window) {
     gdraw_command_list_iterate(
       gdraw_command_image_get_command_list(s_icon_steps),
       prv_recolor_black_to, &green);
+    s_icon_steps_size = gdraw_command_image_get_bounds_size(s_icon_steps);
   }
 
   s_icon_disconnect = gdraw_command_image_create_with_resource(RESOURCE_ID_ICON_DISCONNECT);
@@ -268,6 +306,7 @@ static void prv_window_load(Window *window) {
     gdraw_command_list_iterate(
       gdraw_command_image_get_command_list(s_icon_disconnect),
       prv_invert_cmd, NULL);
+    s_icon_disconnect_size = gdraw_command_image_get_bounds_size(s_icon_disconnect);
   }
 
   // Pre-scaled weather icons (sized per platform via package.json). Invert
@@ -287,8 +326,16 @@ static void prv_window_load(Window *window) {
       gdraw_command_list_iterate(
         gdraw_command_image_get_command_list(s_weather_icons[i]),
         prv_invert_cmd, NULL);
+      s_weather_icon_sizes[i] = gdraw_command_image_get_bounds_size(s_weather_icons[i]);
+    } else {
+      s_weather_icon_sizes[i] = GSize(0, 0);
     }
   }
+
+  // Cache 24h style + initial weather icon + initial widget state.
+  s_is_24h = clock_is_24h_style();
+  prv_refresh_resolved_weather_icon();
+  prv_refresh_widget_state();
 }
 
 static void prv_window_unload(Window *window) {
@@ -334,7 +381,10 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
   }
 
   if (weather_changed) {
-    s_resolved_weather_icon = prv_resolve_weather_icon();
+    prv_refresh_resolved_weather_icon();
+    s_state.icon_weather      = s_resolved_weather_icon;
+    s_state.icon_weather_size = s_resolved_weather_icon_size;
+    s_state.weather_temp      = s_weather_temp;
   }
 
   Tuple *order_t = dict_find(received, MESSAGE_KEY_SlotOrder);
