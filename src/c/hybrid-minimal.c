@@ -7,6 +7,7 @@
 #define PERSIST_KEY_SLOT_ORDER 4
 #define PERSIST_KEY_PROGRESS_COLOR 2
 #define PERSIST_KEY_BAR_STYLE 3
+#define PERSIST_KEY_WEATHER_UNITS 5
 #define SLOT_COUNT 5
 
 // Refresh weather every 30 minutes from the watch.
@@ -32,6 +33,7 @@ static uint32_t s_step_goal = 10000;
 
 static int  s_weather_temp = -999;
 static char s_weather_cond[16] = "";
+static char s_weather_units = 'C';  // 'C' or 'F'
 
 // Cached PDC images
 static GDrawCommandImage *s_icon_steps = NULL;
@@ -143,6 +145,7 @@ static void prv_refresh_widget_state(void) {
   s_state.icon_disconnect      = s_icon_disconnect;
   s_state.connected            = s_connected;
   s_state.is_24h               = s_is_24h;
+  s_state.weather_units        = s_weather_units;
   s_state.icon_steps_size      = s_icon_steps_size;
   s_state.icon_weather_size    = s_resolved_weather_icon_size;
   s_state.icon_disconnect_size = s_icon_disconnect_size;
@@ -425,6 +428,18 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     }
   }
 
+  Tuple *units_t = dict_find(received, MESSAGE_KEY_WeatherUnits);
+  if (units_t && units_t->type == TUPLE_CSTRING && units_t->value->cstring[0]) {
+    char new_unit = units_t->value->cstring[0];
+    if (new_unit != 'C' && new_unit != 'F') new_unit = 'C';
+    if (new_unit != s_weather_units) {
+      s_weather_units = new_unit;
+      s_state.weather_units = new_unit;
+      persist_write_int(PERSIST_KEY_WEATHER_UNITS, (int32_t)new_unit);
+      weather_changed = true;
+    }
+  }
+
   if (weather_changed || order_changed) {
     layer_mark_dirty(s_layer2);
     layer_mark_dirty(s_layer2_inner);
@@ -465,6 +480,11 @@ static void prv_init(void) {
 
   if (persist_exists(PERSIST_KEY_BAR_STYLE)) {
     s_bar_style = (uint8_t)persist_read_int(PERSIST_KEY_BAR_STYLE) ? 1 : 0;
+  }
+
+  if (persist_exists(PERSIST_KEY_WEATHER_UNITS)) {
+    char u = (char)persist_read_int(PERSIST_KEY_WEATHER_UNITS);
+    s_weather_units = (u == 'F') ? 'F' : 'C';
   }
 
   s_window = window_create();

@@ -22,6 +22,7 @@ typedef struct {
   GDrawCommandImage *icon_disconnect;
   bool connected;
   bool is_24h;
+  char weather_units;  // 'C' or 'F'
   // Pre-measured icon sizes (avoid gdraw_command_image_get_bounds_size per draw).
   GSize icon_steps_size;
   GSize icon_weather_size;

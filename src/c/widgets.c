@@ -154,7 +154,8 @@ static void prv_render_weather(GContext *ctx, GRect rect, const WidgetState *s) 
   if (s->weather_temp == -999) {
     snprintf(buf, sizeof(buf), "--");
   } else {
-    snprintf(buf, sizeof(buf), "%d\xc2\xb0 C", s->weather_temp);
+    char unit = (s->weather_units == 'F') ? 'F' : 'C';
+    snprintf(buf, sizeof(buf), "%d\xc2\xb0 %c", s->weather_temp, unit);
   }
 
   graphics_context_set_text_color(ctx, GColorWhite);

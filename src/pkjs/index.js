@@ -26,6 +26,9 @@ var DEFAULT_COLOR_ARGB = 0xE1; // Jazzberry
 // Progress bar shape: 0 = rounded square (default), 1 = sharp square.
 var DEFAULT_BAR_STYLE = 0;
 
+// Temperature unit: 'C' (celsius, default) or 'F' (fahrenheit).
+var DEFAULT_UNITS = 'C';
+
 // ----------------------------------------------------------------------------
 // Weather (Open-Meteo)
 // ----------------------------------------------------------------------------
@@ -45,6 +48,8 @@ function wmoToken(code) {
 }
 
 function fetchWeather() {
+  var units = getSavedUnits();
+  var apiUnit = (units === 'F') ? 'fahrenheit' : 'celsius';
   navigator.geolocation.getCurrentPosition(
     function(pos) {
       var lat = pos.coords.latitude.toFixed(4);
@@ -53,7 +58,7 @@ function fetchWeather() {
                 '?latitude=' + lat +
                 '&longitude=' + lon +
                 '&current_weather=true' +
-                '&temperature_unit=celsius';
+                '&temperature_unit=' + apiUnit;
       var xhr = new XMLHttpRequest();
       xhr.onload = function() {
         try {
@@ -62,8 +67,8 @@ function fetchWeather() {
           var temp = Math.round(cw.temperature);
           var cond = wmoToken(cw.weathercode);
           Pebble.sendAppMessage(
-            { WeatherTemp: temp, WeatherIcon: cond },
-            function() { console.log('Weather sent: ' + temp + '\u00b0 ' + cond); },
+            { WeatherTemp: temp, WeatherIcon: cond, WeatherUnits: units },
+            function() { console.log('Weather sent: ' + temp + '\u00b0 ' + units + ' ' + cond); },
             function(e) { console.log('Weather send failed: ' + JSON.stringify(e)); }
           );
         } catch (e) {
@@ -107,12 +112,18 @@ function getSavedBarStyle() {
   return (n === 1) ? 1 : 0;
 }
 
+function getSavedUnits() {
+  var raw = localStorage.getItem('weatherUnits');
+  return (raw === 'F') ? 'F' : 'C';
+}
+
 function buildConfigHtml(order) {
   var labelsJson = JSON.stringify(WIDGETS);
   var orderJson  = JSON.stringify(order);
   var colorsJson = JSON.stringify(COLORS);
   var selectedColor = getSavedColor();
   var selectedStyle = getSavedBarStyle();
+  var selectedUnits = getSavedUnits();
   return '<!doctype html>' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -146,6 +157,11 @@ function buildConfigHtml(order) {
 '<div class="style" id="st0" data-v="0">Rounded</div>' +
 '<div class="style" id="st1" data-v="1">Square</div>' +
 '</div>' +
+'<div class="zone">Temperature units</div>' +
+'<div class="styles">' +
+'<div class="style" id="unC" data-v="C">Celsius (\u00b0C)</div>' +
+'<div class="style" id="unF" data-v="F">Fahrenheit (\u00b0F)</div>' +
+'</div>' +
 '<button class="save" id="save">Save</button>' +
 '<script>' +
 'var labels=' + labelsJson + ';' +
@@ -153,6 +169,7 @@ function buildConfigHtml(order) {
 'var colors=' + colorsJson + ';' +
 'var selColor=' + selectedColor + ';' +
 'var selStyle=' + selectedStyle + ';' +
+'var selUnits=' + JSON.stringify(selectedUnits) + ';' +
 'function render(){' +
 '  var stack=document.getElementById("stack");' +
 '  stack.innerHTML="";' +
@@ -182,10 +199,15 @@ function buildConfigHtml(order) {
 '    el.className="style"+(v===selStyle?" sel":"");' +
 '    el.onclick=function(){selStyle=v;render();};' +
 '  });' +
+'  ["C","F"].forEach(function(v){' +
+'    var el=document.getElementById("un"+v);' +
+'    el.className="style"+(v===selUnits?" sel":"");' +
+'    el.onclick=function(){selUnits=v;render();};' +
+'  });' +
 '}' +
 'render();' +
 'document.getElementById("save").onclick=function(){' +
-'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor,style:selStyle}));' +
+'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor,style:selStyle,units:selUnits}));' +
 '  document.location="pebblejs://close#"+payload;' +
 '};' +
 '</script></body></html>';
@@ -215,10 +237,22 @@ Pebble.addEventListener('webviewclosed', function(e) {
       localStorage.setItem('barStyle', String(cfg.style));
       msg.BarStyle = cfg.style;
     }
+    var unitsChanged = false;
+    if (cfg && (cfg.units === 'C' || cfg.units === 'F')) {
+      var prevUnits = getSavedUnits();
+      localStorage.setItem('weatherUnits', cfg.units);
+      msg.WeatherUnits = cfg.units;
+      unitsChanged = (prevUnits !== cfg.units);
+    }
     if (Object.keys(msg).length) {
       Pebble.sendAppMessage(msg,
-        function() { console.log('Settings sent: ' + JSON.stringify(msg)); },
+        function() {
+          console.log('Settings sent: ' + JSON.stringify(msg));
+          if (unitsChanged) fetchWeather();
+        },
         function(err) { console.log('Settings send failed: ' + JSON.stringify(err)); });
+    } else if (unitsChanged) {
+      fetchWeather();
     }
   } catch (e) {
     console.log('Config parse error: ' + e);
