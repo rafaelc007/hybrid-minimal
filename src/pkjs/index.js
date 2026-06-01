@@ -135,11 +135,9 @@ function buildConfigHtml(order) {
 '.save{display:block;width:100%;background:#0a84ff;border:0;color:#fff;padding:14px;font-size:16px;border-radius:8px;margin-top:24px}' +
 '</style></head><body>' +
 '<h1>Widget Order</h1>' +
-'<p>The first two appear in the outer ring; the next three in the inner stack.</p>' +
-'<div class="zone">Outer ring (top \u2192 bottom)</div>' +
-'<ul id="outer"></ul>' +
-'<div class="zone">Inner stack (top \u2192 bottom)</div>' +
-'<ul id="inner"></ul>' +
+'<p>Drag the arrows to reorder how widgets appear on the watchface.</p>' +
+'<div class="zone">Widgets (top \u2192 bottom)</div>' +
+'<ul id="stack"></ul>' +
 '<div class="zone">Progress bar color</div>' +
 '<div class="swatches" id="sw"></div>' +
 '<div class="zone">Progress bar shape</div>' +
@@ -155,9 +153,8 @@ function buildConfigHtml(order) {
 'var selColor=' + selectedColor + ';' +
 'var selStyle=' + selectedStyle + ';' +
 'function render(){' +
-'  var outer=document.getElementById("outer");' +
-'  var inner=document.getElementById("inner");' +
-'  outer.innerHTML="";inner.innerHTML="";' +
+'  var stack=document.getElementById("stack");' +
+'  stack.innerHTML="";' +
 '  order.forEach(function(id,idx){' +
 '    var li=document.createElement("li");' +
 '    var name=document.createElement("span");' +
@@ -169,7 +166,7 @@ function buildConfigHtml(order) {
 '    dn.disabled=(idx===order.length-1);' +
 '    dn.onclick=function(){var t=order[idx+1];order[idx+1]=order[idx];order[idx]=t;render();};' +
 '    li.appendChild(name);li.appendChild(up);li.appendChild(dn);' +
-'    (idx<2?outer:inner).appendChild(li);' +
+'    stack.appendChild(li);' +
 '  });' +
 '  var sw=document.getElementById("sw");sw.innerHTML="";' +
 '  colors.forEach(function(c){' +
