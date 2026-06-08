@@ -174,6 +174,29 @@ static GPoint perim_point_at_tick(GRect rect, int16_t r, int tick, int total_tic
   return rounded_perim_point_at_d(rect, r, tick * perim / total_ticks);
 }
 
+// Angle-based polar projection onto a rectangle: returns where the ray from
+// `center` at `angle` (0 = up/12 o'clock, CW positive) intersects a rect with
+// half-extents (w_radius, h_radius). Unlike perim_point_at_tick, this places
+// each hour at a consistent radial depth — corner hours sit near the flat edges
+// instead of being shoved into the corners by linear perimeter spacing.
+static GPoint point_on_face_rect(GPoint center, int32_t angle,
+                                  int w_radius, int h_radius) {
+  int32_t sin_val = sin_lookup(angle);
+  int32_t cos_val = cos_lookup(angle);
+  int32_t abs_sin = sin_val > 0 ? sin_val : -sin_val;
+  int32_t abs_cos = cos_val > 0 ? cos_val : -cos_val;
+  int32_t scale;
+  if (abs_sin * h_radius > abs_cos * w_radius) {
+    scale = (int32_t)w_radius * TRIG_MAX_RATIO / abs_sin;
+  } else {
+    scale = (int32_t)h_radius * TRIG_MAX_RATIO / abs_cos;
+  }
+  return (GPoint) {
+    .x = center.x + (int)(sin_val * scale / TRIG_MAX_RATIO),
+    .y = center.y - (int)(cos_val * scale / TRIG_MAX_RATIO)
+  };
+}
+
 // Draw the band of a rounded-rect from 12 o'clock, clockwise, for `progress/total`.
 static void rounded_draw_progress(GContext *ctx, GRect outer, int16_t r,
                                    int16_t band, int progress, int total) {
@@ -346,66 +369,95 @@ void layer1_chrome_update(Layer *layer, GContext *ctx, int current_hour12,
     // Chalk: pull numbers close to the inner end of the hour ticks
     // (hour ticks extend to inset 14; place number centers at inset ~24).
     int16_t number_inset = 24;
-    const char *hour_font_key = FONT_KEY_GOTHIC_18_BOLD;
+    int16_t current_number_inset = 28;  // larger font needs more clearance from edge
+    const char *hour_font_key     = FONT_KEY_GOTHIC_18_BOLD;
+    const char *current_font_key  = FONT_KEY_GOTHIC_24_BOLD;
     int16_t box_w = 24, box_h = 18;
-    int16_t box_yoff = -(box_h / 2) - 5;
+    int16_t cur_box_w = 30, cur_box_h = 24;
+    int16_t box_yoff     = -(box_h / 2) - 5;
+    int16_t cur_box_yoff = -(cur_box_h / 2) - 6;
 #else
     int16_t number_inset = 28;
-    const char *hour_font_key = FONT_KEY_LECO_20_BOLD_NUMBERS;
+    int16_t current_number_inset = 32;  // larger font needs more clearance from edge
+    const char *hour_font_key     = FONT_KEY_LECO_20_BOLD_NUMBERS;
+    const char *current_font_key  = FONT_KEY_LECO_26_BOLD_NUMBERS_AM_PM;
     int16_t box_w = 28, box_h = 20;
-    // LECO_20 has ~8px of empty space above the digit cap in its box.
-    int16_t box_yoff = -(box_h / 2) - 6;
+    int16_t cur_box_w = 32, cur_box_h = 26;
+    // LECO has ~8px of empty space above the digit cap in its box.
+    int16_t box_yoff     = -(box_h / 2) - 6;
+    int16_t cur_box_yoff = -(cur_box_h / 2) - 8;
 #endif
-    GRect number_rect = grect_inset(bounds, GEdgeInsets(number_inset));
+    GRect number_rect     = grect_inset(bounds, GEdgeInsets(number_inset));
+    GRect cur_number_rect = grect_inset(bounds, GEdgeInsets(current_number_inset));
 
     char hour_str[3];
     for (int h = 1; h <= 12; h++) {
       int32_t angle = TRIG_MAX_ANGLE * h / 12;
-      GPoint pos = gpoint_from_polar(number_rect, GOvalScaleModeFitCircle, angle);
-
       bool is_current = (h == current_hour12);
+      GPoint pos = gpoint_from_polar(is_current ? cur_number_rect : number_rect,
+                                     GOvalScaleModeFitCircle, angle);
       graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
-      GRect text_box = GRect(pos.x - box_w / 2, pos.y + box_yoff, box_w, box_h);
+      int16_t bw = is_current ? cur_box_w : box_w;
+      int16_t bh = is_current ? cur_box_h : box_h;
+      int16_t yo = is_current ? cur_box_yoff : box_yoff;
+      GRect text_box = GRect(pos.x - bw / 2, pos.y + yo, bw, bh);
       graphics_draw_text(ctx, hour_str,
-                         fonts_get_system_font(hour_font_key),
+                         fonts_get_system_font(is_current ? current_font_key : hour_font_key),
                          text_box, GTextOverflowModeTrailingEllipsis,
                          GTextAlignmentCenter, NULL);
     }
   }
 #else
   {
+    // Angle-based number positioning (ported from simple-watchface): for each
+    // hour, project a ray from the bounds center at that hour's angle onto a
+    // rectangle inset uniformly by `number_inset`. All numbers end up at the
+    // same radial inset from the screen edge, so corner hours (1/2/4/5/7/8/10/11)
+    // sit closer to the flat edge midpoints instead of being crowded into the
+    // visual corners by linear perimeter spacing.
     int16_t number_inset = 24;
-    GRect number_rect = grect_inset(bounds, GEdgeInsets(number_inset));
-    int16_t r_num = rounded ? (ROUNDED_CORNER_R - (number_inset - tick_outer_inset)) : 0;
-    if (r_num < 0) r_num = 0;
+    int16_t current_number_inset = 28;  // larger font needs more clearance from edge
+    GPoint center = grect_center_point(&bounds);
+    int w_radius     = (bounds.size.w / 2) - number_inset;
+    int h_radius     = (bounds.size.h / 2) - number_inset;
+    int cur_w_radius = (bounds.size.w / 2) - current_number_inset;
+    int cur_h_radius = (bounds.size.h / 2) - current_number_inset;
+    (void)rounded;
 
     char hour_str[3];
     for (int h = 1; h <= 12; h++) {
-      int tick = h * 5;
-      if (tick >= 60) tick -= 60;
-      GPoint pos = perim_point_at_tick(number_rect, r_num, tick, 60);
-
+      int32_t angle = TRIG_MAX_ANGLE * h / 12;
       bool is_current = (h == current_hour12);
+      GPoint pos = point_on_face_rect(center, angle,
+                                      is_current ? cur_w_radius : w_radius,
+                                      is_current ? cur_h_radius : h_radius);
 #ifdef PBL_COLOR
       graphics_context_set_text_color(ctx, is_current ? GColorWhite : GColorDarkGray);
 #else
       if (is_current) {
         graphics_context_set_stroke_color(ctx, GColorWhite);
-        graphics_draw_rect(ctx, GRect(pos.x - 12, pos.y - 14, 24, 20));
+        graphics_draw_rect(ctx, GRect(pos.x - 15, pos.y - 16, 30, 24));
       }
       (void)is_current;
       graphics_context_set_text_color(ctx, GColorWhite);
 #endif
 
       snprintf(hour_str, sizeof(hour_str), "%d", h);
-      // LECO_20 has ~6–7px padding above the digit cap inside its box;
-      // shift up so the glyph centers on pos.y.
-      int16_t box_w = 24, box_h = 20;
-      GRect text_box = GRect(pos.x - box_w / 2, pos.y - box_h / 2 - 6, box_w, box_h);
+      // LECO has ~6–8px padding above the digit cap inside its box; shift up
+      // so the glyph centers on pos.y. The current hour uses LECO_26 for a
+      // subtle highlight.
+      int16_t box_w = is_current ? 30 : 24;
+      int16_t box_h = is_current ? 26 : 20;
+      int16_t box_yoff = is_current ? -8 : -6;
+      GRect text_box = GRect(pos.x - box_w / 2,
+                             pos.y - box_h / 2 + box_yoff,
+                             box_w, box_h);
       graphics_draw_text(ctx, hour_str,
-                         fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS),
+                         fonts_get_system_font(
+                           is_current ? FONT_KEY_LECO_26_BOLD_NUMBERS_AM_PM
+                                      : FONT_KEY_LECO_20_BOLD_NUMBERS),
                          text_box, GTextOverflowModeTrailingEllipsis,
                          GTextAlignmentCenter, NULL);
     }

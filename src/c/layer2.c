@@ -45,13 +45,13 @@ void layer2_update(Layer *layer, GContext *ctx,
   GRect bounds = layer_get_bounds(layer);
   int16_t pad = 2;
 
-  // Inner layer is centered inside this outer layer. On large screens
-  // (emery/gabbro) the inner region is 15/30 of the screen (vs outer 19/30),
-  // so inner_h = outer_h * 15/19. On small screens it is 11/30 → 11/19.
+  // Inner layer is centered inside this outer layer. Ratios match the
+  // layer2_inner_rect sizing in hybrid-minimal.c so the inner stack lines up
+  // with the outer strips.
 #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
   int16_t inner_h = bounds.size.h * 15 / 19;
 #else
-  int16_t inner_h = bounds.size.h * 11 / 19;
+  int16_t inner_h = bounds.size.h * 11 / 17;
 #endif
   int16_t margin  = (bounds.size.h - inner_h) / 2;
 
