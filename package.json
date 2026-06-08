@@ -31,7 +31,8 @@
       "SlotOrder",
       "RequestWeather",
       "ProgressColor",
-      "BarStyle"
+      "BarStyle",
+      "DateFormat"
     ],
     "resources": {
       "media": [

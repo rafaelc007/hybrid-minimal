@@ -8,6 +8,7 @@
 #define PERSIST_KEY_PROGRESS_COLOR 2
 #define PERSIST_KEY_BAR_STYLE 3
 #define PERSIST_KEY_WEATHER_UNITS 5
+#define PERSIST_KEY_DATE_FORMAT 6
 #define SLOT_COUNT 5
 
 // Refresh weather every 30 minutes from the watch.
@@ -80,6 +81,9 @@ static uint8_t s_progress_color_argb = 0;  // set in prv_init from GColorLightGr
 // Only affects rectangular displays; round displays always render an arc.
 static uint8_t s_bar_style = 0;
 
+// Date format selection — see DateFormat enum in widgets.h.
+static uint8_t s_date_format = DATE_FMT_MMM_DD;
+
 // ============================================================================
 // PDC color helpers (called once at load)
 // ============================================================================
@@ -146,6 +150,7 @@ static void prv_refresh_widget_state(void) {
   s_state.connected            = s_connected;
   s_state.is_24h               = s_is_24h;
   s_state.weather_units        = s_weather_units;
+  s_state.date_format          = s_date_format;
   s_state.icon_steps_size      = s_icon_steps_size;
   s_state.icon_weather_size    = s_resolved_weather_icon_size;
   s_state.icon_disconnect_size = s_icon_disconnect_size;
@@ -440,7 +445,21 @@ static void prv_inbox_received_handler(DictionaryIterator *received, void *conte
     }
   }
 
-  if (weather_changed || order_changed) {
+  Tuple *date_fmt_t = dict_find(received, MESSAGE_KEY_DateFormat);
+  bool date_format_changed = false;
+  if (date_fmt_t) {
+    int32_t v = date_fmt_t->value->int32;
+    if (v < 0 || v >= DATE_FMT_COUNT) v = DATE_FMT_MMM_DD;
+    uint8_t new_fmt = (uint8_t)v;
+    if (new_fmt != s_date_format) {
+      s_date_format = new_fmt;
+      s_state.date_format = new_fmt;
+      persist_write_int(PERSIST_KEY_DATE_FORMAT, (int32_t)new_fmt);
+      date_format_changed = true;
+    }
+  }
+
+  if (weather_changed || order_changed || date_format_changed) {
     layer_mark_dirty(s_layer2);
     layer_mark_dirty(s_layer2_inner);
   }
@@ -485,6 +504,11 @@ static void prv_init(void) {
   if (persist_exists(PERSIST_KEY_WEATHER_UNITS)) {
     char u = (char)persist_read_int(PERSIST_KEY_WEATHER_UNITS);
     s_weather_units = (u == 'F') ? 'F' : 'C';
+  }
+
+  if (persist_exists(PERSIST_KEY_DATE_FORMAT)) {
+    int32_t v = persist_read_int(PERSIST_KEY_DATE_FORMAT);
+    if (v >= 0 && v < DATE_FMT_COUNT) s_date_format = (uint8_t)v;
   }
 
   s_window = window_create();

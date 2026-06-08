@@ -29,6 +29,18 @@ var DEFAULT_BAR_STYLE = 0;
 // Temperature unit: 'C' (celsius, default) or 'F' (fahrenheit).
 var DEFAULT_UNITS = 'C';
 
+// Date format options — keep in sync with DateFormat enum in src/c/widgets.h.
+var DATE_FORMATS = [
+  { id: 0, label: 'MMM-DD',         sample: 'Mar-05' },
+  { id: 1, label: 'MM-DD',          sample: '03-05' },
+  { id: 2, label: 'DD-MM',          sample: '05-03' },
+  { id: 3, label: 'DD-MM-YY',       sample: '05-03-26' },
+  { id: 4, label: 'DD-WEEKDAY',     sample: '05-Mon' },
+  { id: 5, label: 'WEEKDAY | DD-MM', sample: 'Mon | 05-03' },
+  { id: 6, label: 'WEEKDAY | MM-DD', sample: 'Mon | 03-05' }
+];
+var DEFAULT_DATE_FORMAT = 0;
+
 // ----------------------------------------------------------------------------
 // Weather (Open-Meteo)
 // ----------------------------------------------------------------------------
@@ -117,13 +129,23 @@ function getSavedUnits() {
   return (raw === 'F') ? 'F' : 'C';
 }
 
+function getSavedDateFormat() {
+  var raw = localStorage.getItem('dateFormat');
+  if (raw === null) return DEFAULT_DATE_FORMAT;
+  var n = parseInt(raw, 10);
+  if (isNaN(n) || n < 0 || n >= DATE_FORMATS.length) return DEFAULT_DATE_FORMAT;
+  return n;
+}
+
 function buildConfigHtml(order) {
   var labelsJson = JSON.stringify(WIDGETS);
   var orderJson  = JSON.stringify(order);
   var colorsJson = JSON.stringify(COLORS);
+  var dateFormatsJson = JSON.stringify(DATE_FORMATS);
   var selectedColor = getSavedColor();
   var selectedStyle = getSavedBarStyle();
   var selectedUnits = getSavedUnits();
+  var selectedDateFormat = getSavedDateFormat();
   return '<!doctype html>' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -144,6 +166,12 @@ function buildConfigHtml(order) {
 '.styles{display:flex;gap:8px}' +
 '.style{flex:1;background:#333;color:#eee;border:2px solid #333;border-radius:6px;padding:12px;text-align:center;font-size:14px;cursor:pointer}' +
 '.style.sel{border-color:#0a84ff;background:#1c3a5c}' +
+'.dates{display:flex;flex-direction:column;gap:6px}' +
+'.df{background:#333;color:#eee;border:2px solid #333;border-radius:6px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;justify-content:space-between}' +
+'.df.sel{border-color:#0a84ff;background:#1c3a5c}' +
+'.df .lbl{font-size:14px}' +
+'.df .smp{font-size:13px;color:#aaa;font-family:Menlo,monospace}' +
+'.df.sel .smp{color:#cde6ff}' +
 '.save{display:block;width:100%;background:#0a84ff;border:0;color:#fff;padding:14px;font-size:16px;border-radius:8px;margin-top:24px}' +
 '</style></head><body>' +
 '<h1>Widget Order</h1>' +
@@ -162,14 +190,18 @@ function buildConfigHtml(order) {
 '<div class="style" id="unC" data-v="C">Celsius (\u00b0C)</div>' +
 '<div class="style" id="unF" data-v="F">Fahrenheit (\u00b0F)</div>' +
 '</div>' +
+'<div class="zone">Date format</div>' +
+'<div class="dates" id="df"></div>' +
 '<button class="save" id="save">Save</button>' +
 '<script>' +
 'var labels=' + labelsJson + ';' +
 'var order=' + orderJson + ';' +
 'var colors=' + colorsJson + ';' +
+'var dateFormats=' + dateFormatsJson + ';' +
 'var selColor=' + selectedColor + ';' +
 'var selStyle=' + selectedStyle + ';' +
 'var selUnits=' + JSON.stringify(selectedUnits) + ';' +
+'var selDateFmt=' + selectedDateFormat + ';' +
 'function render(){' +
 '  var stack=document.getElementById("stack");' +
 '  stack.innerHTML="";' +
@@ -204,10 +236,20 @@ function buildConfigHtml(order) {
 '    el.className="style"+(v===selUnits?" sel":"");' +
 '    el.onclick=function(){selUnits=v;render();};' +
 '  });' +
+'  var df=document.getElementById("df");df.innerHTML="";' +
+'  dateFormats.forEach(function(f){' +
+'    var el=document.createElement("div");' +
+'    el.className="df"+(f.id===selDateFmt?" sel":"");' +
+'    var lbl=document.createElement("span");lbl.className="lbl";lbl.textContent=f.label;' +
+'    var smp=document.createElement("span");smp.className="smp";smp.textContent=f.sample;' +
+'    el.appendChild(lbl);el.appendChild(smp);' +
+'    el.onclick=function(){selDateFmt=f.id;render();};' +
+'    df.appendChild(el);' +
+'  });' +
 '}' +
 'render();' +
 'document.getElementById("save").onclick=function(){' +
-'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor,style:selStyle,units:selUnits}));' +
+'  var payload=encodeURIComponent(JSON.stringify({order:order,color:selColor,style:selStyle,units:selUnits,dateFmt:selDateFmt}));' +
 '  document.location="pebblejs://close#"+payload;' +
 '};' +
 '</script></body></html>';
@@ -243,6 +285,11 @@ Pebble.addEventListener('webviewclosed', function(e) {
       localStorage.setItem('weatherUnits', cfg.units);
       msg.WeatherUnits = cfg.units;
       unitsChanged = (prevUnits !== cfg.units);
+    }
+    if (cfg && typeof cfg.dateFmt === 'number' &&
+        cfg.dateFmt >= 0 && cfg.dateFmt < DATE_FORMATS.length) {
+      localStorage.setItem('dateFormat', String(cfg.dateFmt));
+      msg.DateFormat = cfg.dateFmt;
     }
     if (Object.keys(msg).length) {
       Pebble.sendAppMessage(msg,

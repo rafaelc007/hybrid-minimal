@@ -10,6 +10,17 @@ typedef enum {
   WIDGET_COUNT
 } WidgetId;
 
+typedef enum {
+  DATE_FMT_MMM_DD = 0,        // Mar-05
+  DATE_FMT_MM_DD,             // 03-05
+  DATE_FMT_DD_MM,             // 05-03
+  DATE_FMT_DD_MM_YY,          // 05-03-26
+  DATE_FMT_DD_WEEKDAY,        // 05-Mon
+  DATE_FMT_WEEKDAY_DD_MM,     // Mon | 05-03
+  DATE_FMT_WEEKDAY_MM_DD,     // Mon | 03-05
+  DATE_FMT_COUNT
+} DateFormat;
+
 typedef struct {
   uint32_t steps;
   uint32_t step_goal;
@@ -23,6 +34,7 @@ typedef struct {
   bool connected;
   bool is_24h;
   char weather_units;  // 'C' or 'F'
+  uint8_t date_format; // DateFormat enum
   // Pre-measured icon sizes (avoid gdraw_command_image_get_bounds_size per draw).
   GSize icon_steps_size;
   GSize icon_weather_size;

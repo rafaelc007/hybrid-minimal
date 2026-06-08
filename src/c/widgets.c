@@ -130,9 +130,42 @@ static void prv_render_date(GContext *ctx, GRect rect, const WidgetState *s) {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
   };
-  char buf[12];
-  snprintf(buf, sizeof(buf), "%s-%02d",
-           months[s->current_time->tm_mon], s->current_time->tm_mday);
+  static const char *weekdays[] = {
+    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+  };
+  const struct tm *t = s->current_time;
+  int mon  = t->tm_mon;       // 0..11
+  int mday = t->tm_mday;      // 1..31
+  int wday = t->tm_wday;      // 0..6 (Sun=0)
+  int yy   = t->tm_year % 100;
+  if (mon  < 0 || mon  > 11) mon  = 0;
+  if (wday < 0 || wday > 6)  wday = 0;
+
+  char buf[16];
+  switch ((DateFormat)s->date_format) {
+    case DATE_FMT_MM_DD:
+      snprintf(buf, sizeof(buf), "%02d-%02d", mon + 1, mday);
+      break;
+    case DATE_FMT_DD_MM:
+      snprintf(buf, sizeof(buf), "%02d-%02d", mday, mon + 1);
+      break;
+    case DATE_FMT_DD_MM_YY:
+      snprintf(buf, sizeof(buf), "%02d-%02d-%02d", mday, mon + 1, yy);
+      break;
+    case DATE_FMT_DD_WEEKDAY:
+      snprintf(buf, sizeof(buf), "%02d-%s", mday, weekdays[wday]);
+      break;
+    case DATE_FMT_WEEKDAY_DD_MM:
+      snprintf(buf, sizeof(buf), "%s | %02d-%02d", weekdays[wday], mday, mon + 1);
+      break;
+    case DATE_FMT_WEEKDAY_MM_DD:
+      snprintf(buf, sizeof(buf), "%s | %02d-%02d", weekdays[wday], mon + 1, mday);
+      break;
+    case DATE_FMT_MMM_DD:
+    default:
+      snprintf(buf, sizeof(buf), "%s-%02d", months[mon], mday);
+      break;
+  }
 
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, buf,
